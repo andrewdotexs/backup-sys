@@ -1,6 +1,6 @@
 # backup-sys — Piano di sviluppo
 
-> Stato: **APPROVATO** (2026-11-06) — decisioni prese in [§9](#9-decisioni-prese).
+> Stato: **APPROVATO** (2026-11-06) — decisioni prese in [§9](#9-decisioni-prese). Fasi 0–7 implementate (v0.1.0).
 
 ---
 

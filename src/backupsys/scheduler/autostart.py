@@ -16,8 +16,9 @@ VALUE_NAME = "backup-sys"
 
 
 def command_line() -> str:
-    if getattr(sys, "frozen", False):  # eseguibile PyInstaller
-        return f'"{sys.executable}" daemon'
+    if getattr(sys, "frozen", False):  # eseguibile PyInstaller: usa sempre la versione senza console
+        gui = Path(sys.executable).with_name("backup-sys.exe")
+        return f'"{gui if gui.exists() else sys.executable}" daemon'
     exe = Path(sys.executable)
     pyw = exe.with_name("pythonw.exe")
     interpreter = pyw if pyw.exists() else exe  # pythonw: nessuna finestra di console
