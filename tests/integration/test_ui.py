@@ -226,4 +226,11 @@ def test_job_save_resolves_link_and_warns_missing(client: TestClient, svc: Backu
 def test_new_job_form_shows_known_folders(client: TestClient) -> None:
     _login(client)
     r = client.get("/jobs/new")
-    assert r.status_code == 200 and "C:\\Users" not in r.text.split("<textarea")[1].split("</textarea>")[0]
+    assert r.status_code == 200
+    textarea = r.text.split("<textarea", 1)[1].split(">", 1)[1].split("</textarea>")[0].strip()
+    assert textarea != "C:\\Users"  # non più l'intera cartella utenti
+    from backupsys.known_folders import known_folders
+
+    known = known_folders()
+    if known:  # su Windows: i Documenti reali (SHGetKnownFolderPath)
+        assert textarea == known[0][1] and "data-add-source" in r.text
