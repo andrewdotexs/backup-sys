@@ -7,6 +7,7 @@ Usa ``WNetAddConnection2W`` via ctypes: la password non passa mai dalla riga di 
 from __future__ import annotations
 
 import os
+import sys
 from typing import TYPE_CHECKING
 
 from backupsys.security import secrets
@@ -38,6 +39,8 @@ def ensure_connected(dest: Destination) -> None:
 
 
 def _wnet_add_connection(remote: str, user: str, password: str) -> None:  # pragma: no cover - solo Windows
+    if sys.platform != "win32":
+        raise OSError("Connessione a condivisioni di rete supportata solo su Windows")
     import ctypes
     from ctypes import wintypes
 
@@ -57,7 +60,7 @@ def _wnet_add_connection(remote: str, user: str, password: str) -> None:  # prag
     nr = NETRESOURCEW()
     nr.dwType = RESOURCETYPE_DISK
     nr.lpRemoteName = remote
-    mpr = ctypes.WinDLL("mpr")  # type: ignore[attr-defined]
+    mpr = ctypes.WinDLL("mpr")
     rc = mpr.WNetAddConnection2W(ctypes.byref(nr), password, user, 0)
     if rc not in (0, 1219):  # 1219 = già connesso con altre credenziali
         raise OSError(rc, f"Connessione a {remote} non riuscita (codice {rc})")

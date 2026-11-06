@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 import threading
 import time
 from collections.abc import Callable
@@ -75,10 +76,10 @@ class DestInfo:
 
 def _background_priority() -> None:
     """Abbassa priorità CPU e I/O del thread worker (Windows: THREAD_MODE_BACKGROUND_BEGIN)."""
-    if os.name == "nt":  # pragma: no cover - solo Windows
+    if sys.platform == "win32":  # pragma: no cover - solo Windows
         import ctypes
 
-        k32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        k32 = ctypes.windll.kernel32
         k32.SetThreadPriority(k32.GetCurrentThread(), 0x00010000)
 
 

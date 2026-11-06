@@ -5,7 +5,7 @@ Il lock è rilasciato dal sistema operativo alla chiusura del file/processo: nes
 
 from __future__ import annotations
 
-import os
+import sys
 from types import TracebackType
 from typing import IO
 
@@ -26,11 +26,11 @@ class DestinationLock:
     def acquire(self) -> None:
         f = open(self.path, "a+b")  # noqa: SIM115
         try:
-            if os.name == "nt":
+            if sys.platform == "win32":
                 import msvcrt
 
                 f.seek(0)
-                msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)  # type: ignore[attr-defined]
+                msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
             else:
                 import fcntl
 
@@ -44,11 +44,11 @@ class DestinationLock:
         if self._f is None:
             return
         try:
-            if os.name == "nt":
+            if sys.platform == "win32":
                 import msvcrt
 
                 self._f.seek(0)
-                msvcrt.locking(self._f.fileno(), msvcrt.LK_UNLCK, 1)  # type: ignore[attr-defined]
+                msvcrt.locking(self._f.fileno(), msvcrt.LK_UNLCK, 1)
             else:
                 import fcntl
 
