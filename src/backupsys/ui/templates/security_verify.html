@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge %}
+{% block title %}Verifica{% endblock %}
+{% block content %}
+<h1>Verifica {{ v.job_name }} su {{ v.dest_name }}</h1>
+<section class="card">
+  <p>{{ badge(v.status) }} {{ v.started_at | dt }} · {{ v.message }}</p>
+  {% if v.unverifiable %}<p class="muted">{{ v.unverifiable }} file presenti sul disco senza impronta registrata (es. copiati a mano): non verificabili.</p>{% endif %}
+  {% if issues %}
+  <table>
+    <thead><tr><th>File</th><th>Problema</th></tr></thead>
+    <tbody>{% for i in issues %}<tr><td><code>{{ i.path }}</code></td>
+      <td class="{{ 'err-text' if i.issue == 'corrotto' }}">{{ 'CORROTTO: verrà sostituito al prossimo backup se il file è ancora sul PC' if i.issue == 'corrotto' else 'mancante: verrà ricopiato' }}</td></tr>{% endfor %}</tbody>
+  </table>
+  {% else %}<p>Nessun problema rilevato.</p>{% endif %}
+  <p><a href="/security">← Sicurezza</a></p>
+</section>
+{% endblock %}

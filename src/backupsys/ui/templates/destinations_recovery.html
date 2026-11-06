@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Codice di recupero{% endblock %}
+{% block content %}
+<section class="card alert">
+  <h1>Codice di recupero per «{{ dest.name }}»</h1>
+  <p><strong>Stampalo o scrivilo e conservalo lontano dal disco.</strong> Non verrà mostrato di nuovo.
+     Con questo codice puoi decifrare i backup anche se dimentichi la passphrase o reinstalli il PC
+     (<code>backup-sys decrypt --code …</code>).</p>
+  <pre class="recovery">{{ code }}</pre>
+  <a class="button primary" href="/destinations/{{ dest.id }}?ok=Cifratura+attiva">Ho salvato il codice</a>
+</section>
+{% endblock %}

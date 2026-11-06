@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}Primo avvio{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>Benvenuto in backup-sys</h1>
+  <p>Scegli una password per proteggere l'interfaccia. Servirà ogni volta che apri il pannello.</p>
+  <form method="post" action="/setup" class="stack">
+    <label>Password <input type="password" name="password" minlength="8" required autofocus autocomplete="new-password"></label>
+    <label>Ripeti la password <input type="password" name="password2" minlength="8" required autocomplete="new-password"></label>
+    <button class="primary">Salva e accedi</button>
+  </form>
+</section>
+{% endblock %}

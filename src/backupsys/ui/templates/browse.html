@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Ripristino{% endblock %}
+{% block content %}
+<h1>Ripristino</h1>
+<form method="get" action="/browse" class="card row wrap">
+  <label>Backup
+    <select name="job" required>{% for j in jobs %}<option value="{{ j.id }}" {{ 'selected' if j.id == job_id }}>{{ j.name }}</option>{% endfor %}</select></label>
+  <label>Disco
+    <select name="dest" required>{% for d in dests %}<option value="{{ d.id }}" {{ 'selected' if d.id == dest_id }}>{{ d.name }}</option>{% endfor %}</select></label>
+  <button class="primary">Apri</button>
+</form>
+
+{% if job and dest %}
+  {% if not info.status.ready %}
+    <p class="flash err">{{ dest.name }}: {{ info.status.message }}</p>
+  {% elif entries is not defined %}
+    <p class="empty">Su questo disco non c'è ancora nessun backup di «{{ job.name }}».</p>
+  {% else %}
+  <section class="card">
+    <form method="get" action="/browse" class="row wrap">
+      <input type="hidden" name="job" value="{{ job.id }}"><input type="hidden" name="dest" value="{{ dest.id }}">
+      <label>Mostra
+        <select name="area" data-autosubmit>
+          {% for a in areas %}<option value="{{ a }}" {{ 'selected' if a == area }}>{{ 'Copia corrente' if a == 'current' else 'Versioni sostituite il ' ~ a.split('/')[1].replace('T', ' alle ') }}</option>{% endfor %}
+        </select></label>
+    </form>
+    <nav class="crumbs">
+      <a href="/browse?job={{ job.id }}&dest={{ dest.id }}&area={{ area | q }}">📁 {{ job.name }}</a>
+      {% for name, p in crumbs %} / <a href="/browse?job={{ job.id }}&dest={{ dest.id }}&area={{ area | q }}&path={{ p | q }}">{{ name }}</a>{% endfor %}
+    </nav>
+    {% if rel %}
+    <details class="restore-box">
+      <summary>Ripristina questa cartella</summary>
+      {% set restore_path = rel %}{% include "_restore_form.html" %}
+    </details>
+    {% endif %}
+    <table>
+      <thead><tr><th>Nome</th><th>Dimensione</th><th>Modificato</th><th></th></tr></thead>
+      <tbody>
+      {% for e in entries %}
+        <tr>
+          {% if e.is_dir %}
+          <td><a href="/browse?job={{ job.id }}&dest={{ dest.id }}&area={{ area | q }}&path={{ e.rel | q }}">📁 {{ e.name }}</a></td><td></td>
+          {% else %}
+          <td>📄 {{ e.name }}</td><td>{{ e.size | bytes }}</td>
+          {% endif %}
+          <td>{{ e.mtime | dt }}</td>
+          <td class="right">{% if not e.is_dir %}<a class="button small" href="/browse/versions?job={{ job.id }}&dest={{ dest.id }}&path={{ e.rel | q }}">Versioni / ripristina</a>{% endif %}</td>
+        </tr>
+      {% else %}
+        <tr><td colspan="4" class="empty">Cartella vuota.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endif %}
+{% endif %}
+{% endblock %}

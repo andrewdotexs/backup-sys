@@ -99,6 +99,8 @@ class Job(BaseModel):
     guard_threshold_percent: float = Field(30.0, ge=1, le=100)
     #: Il guard si attiva solo se il backup contiene almeno questo numero di file.
     guard_min_files: int = Field(50, ge=1)
+    #: Verifica di integrità automatica ogni N giorni (None = solo manuale).
+    verify_every_days: int | None = Field(30, ge=1)
 
     @field_validator("name")
     @classmethod

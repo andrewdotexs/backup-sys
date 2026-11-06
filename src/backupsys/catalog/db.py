@@ -49,6 +49,26 @@ CREATE TABLE IF NOT EXISTS run_errors (
     path TEXT NOT NULL,
     error TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS verifies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id TEXT NOT NULL,
+    dest_id TEXT NOT NULL,
+    job_name TEXT NOT NULL,
+    dest_name TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    finished_at TEXT,
+    status TEXT NOT NULL,
+    checked INTEGER DEFAULT 0,
+    corrupted INTEGER DEFAULT 0,
+    missing INTEGER DEFAULT 0,
+    unverifiable INTEGER DEFAULT 0,
+    message TEXT DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS verify_issues (
+    verify_id INTEGER NOT NULL REFERENCES verifies(id),
+    path TEXT NOT NULL,
+    issue TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS dest_state (
     job_id TEXT NOT NULL,
     dest_id TEXT NOT NULL,
@@ -97,6 +117,7 @@ class Catalog:
                 "UPDATE runs SET status=?, message='Interrotta (programma chiuso o PC spento)' WHERE status=?",
                 (CANCELLED, RUNNING),
             )
+            c.execute("UPDATE verifies SET status=?, message='Interrotta' WHERE status=?", (CANCELLED, RUNNING))
 
     @contextmanager
     def _conn(self) -> Iterator[sqlite3.Connection]:
@@ -183,10 +204,16 @@ class Catalog:
         """Ultimo avvio (esclusi i job in pausa): base per calcolare la prossima esecuzione."""
         with self._conn() as c:
             r = c.execute(
-                "SELECT started_at FROM runs WHERE job_id=? AND trigger != 'connect' ORDER BY id DESC LIMIT 1",
+                "SELECT started_at FROM runs WHERE job_id=? AND trigger NOT IN ('connect', 'verify') "
+                "ORDER BY id DESC LIMIT 1",
                 (job_id,),
             ).fetchone()
             return datetime.fromisoformat(r["started_at"]) if r else None
+
+    def first_run_at(self, job_id: str) -> datetime | None:
+        with self._conn() as c:
+            r = c.execute("SELECT MIN(started_at) AS t FROM runs WHERE job_id=?", (job_id,)).fetchone()
+            return datetime.fromisoformat(r["t"]) if r and r["t"] else None
 
     def last_success(self, job_id: str, dest_id: str) -> datetime | None:
         with self._conn() as c:
@@ -194,3 +221,50 @@ class Catalog:
                 "SELECT last_success_at FROM dest_state WHERE job_id=? AND dest_id=?", (job_id, dest_id)
             ).fetchone()
             return datetime.fromisoformat(r["last_success_at"]) if r and r["last_success_at"] else None
+
+    # ------------------------------------------------------------------ verifiche di integrità
+    def start_verify(self, job_id: str, dest_id: str, job_name: str, dest_name: str) -> int:
+        with self._conn() as c:
+            cur = c.execute(
+                "INSERT INTO verifies(job_id, dest_id, job_name, dest_name, started_at, status) VALUES (?,?,?,?,?,?)",
+                (job_id, dest_id, job_name, dest_name, _now(), RUNNING),
+            )
+            return int(cur.lastrowid or 0)
+
+    def finish_verify(
+        self,
+        verify_id: int,
+        status: str,
+        checked: int,
+        corrupted: list[str],
+        missing: list[str],
+        unverifiable: int,
+        message: str = "",
+    ) -> None:
+        with self._conn() as c:
+            c.execute(
+                "UPDATE verifies SET finished_at=?, status=?, checked=?, corrupted=?, missing=?, unverifiable=?, "
+                "message=? WHERE id=?",
+                (_now(), status, checked, len(corrupted), len(missing), unverifiable, message, verify_id),
+            )
+            c.executemany(
+                "INSERT INTO verify_issues(verify_id, path, issue) VALUES (?,?,?)",
+                [(verify_id, p, "corrotto") for p in corrupted[:5000]]
+                + [(verify_id, p, "mancante") for p in missing[:5000]],
+            )
+
+    def verifies(self, limit: int = 50) -> list[dict[str, Any]]:
+        with self._conn() as c:
+            return [dict(r) for r in c.execute("SELECT * FROM verifies ORDER BY id DESC LIMIT ?", (limit,))]
+
+    def verify_issues(self, verify_id: int) -> list[dict[str, Any]]:
+        with self._conn() as c:
+            return [dict(r) for r in c.execute("SELECT * FROM verify_issues WHERE verify_id=?", (verify_id,))]
+
+    def last_verify_at(self, job_id: str, dest_id: str) -> datetime | None:
+        with self._conn() as c:
+            r = c.execute(
+                "SELECT started_at FROM verifies WHERE job_id=? AND dest_id=? ORDER BY id DESC LIMIT 1",
+                (job_id, dest_id),
+            ).fetchone()
+            return datetime.fromisoformat(r["started_at"]) if r else None

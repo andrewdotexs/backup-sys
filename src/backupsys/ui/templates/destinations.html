@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% from "_macros.html" import space %}
+{% block title %}Dischi{% endblock %}
+{% block content %}
+<div class="row"><h1>Dischi di backup</h1><a class="button primary push" href="/destinations/new">+ Aggiungi disco</a></div>
+{% for i in infos %}
+<section class="card">
+  <div class="row">
+    <h2><a href="/destinations/{{ i.dest.id }}">{{ i.dest.name }}</a></h2>
+    <span class="badge {{ 's-ok' if i.status.ready else ('s-failed' if i.status.available else 's-skipped') }}">{{ i.status.message }}</span>
+    <a class="button small push" href="/destinations/{{ i.dest.id }}">Gestisci</a>
+  </div>
+  <small class="muted">{{ i.dest.path }} · {{ 'rete' if i.dest.kind == 'network' else 'disco locale/USB' }}{% if i.dest.encrypted %} · 🔒 cifrato{% endif %}</small>
+  {{ space(i) }}
+</section>
+{% else %}
+<p class="empty">Nessun disco configurato. Collega un disco esterno o indica un percorso di rete.</p>
+{% endfor %}
+{% endblock %}

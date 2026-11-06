@@ -32,6 +32,7 @@ ALLOWED = {
     ("core/retention.py", "shutil.rmtree"): "rotazione versioni (D3), con controlli sul percorso",
     ("config/store.py", "os.replace"): "salvataggio atomico del file di configurazione locale",
     ("security/auth.py", "os.replace"): "salvataggio atomico dell'hash password locale",
+    ("scheduler/autostart.py", ".unlink()"): "rimozione del file di avvio automatico locale (Linux)",
 }
 
 
@@ -55,7 +56,8 @@ def _violations() -> list[str]:
                     and len(node.args) <= 1
                 ):
                     # metodo su un oggetto (es. Path(...).unlink()) — os.rename è ammesso solo in fsutil
-                    found.append(f"{rel}:{node.lineno} .{attr}()")
+                    if (rel, f".{attr}()") not in ALLOWED:
+                        found.append(f"{rel}:{node.lineno} .{attr}()")
                 elif isinstance(base, ast.Name) and base.id == "os" and attr == "rename" and rel != "core/fsutil.py":
                     found.append(f"{rel}:{node.lineno} os.rename (usa fsutil.rename_no_clobber)")
             if isinstance(node, ast.ImportFrom) and node.module in ("os", "shutil"):
@@ -72,4 +74,5 @@ def test_no_delete_apis_outside_allowlist() -> None:
 def test_allowlist_entries_are_real() -> None:
     """Le eccezioni devono corrispondere a codice esistente (niente voci obsolete)."""
     for rel, name in ALLOWED:
-        assert name.split(".")[1] in (PKG / rel).read_text(encoding="utf-8"), (rel, name)
+        token = name.strip(".()").split(".")[-1]
+        assert token in (PKG / rel).read_text(encoding="utf-8"), (rel, name)

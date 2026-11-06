@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge %}
+{% block title %}Sicurezza{% endblock %}
+{% block content %}
+<h1>Sicurezza</h1>
+
+<section class="card">
+  <h2>Verifica di integrità dei backup</h2>
+  <p class="muted">Rilegge i file sui dischi e ne controlla l'impronta SHA-256: scopre settori danneggiati, file corrotti o manomessi.</p>
+  <form method="post" action="/security/verify" class="row wrap">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <select name="job">{% for j in jobs %}<option value="{{ j.id }}">{{ j.name }}</option>{% endfor %}</select>
+    <button class="primary">Verifica ora</button>
+  </form>
+  <table>
+    <thead><tr><th>Data</th><th>Backup</th><th>Disco</th><th>Esito</th><th>Controllati</th><th>Corrotti</th><th>Mancanti</th><th>Note</th></tr></thead>
+    <tbody>
+    {% for v in verifies %}
+      <tr><td><a href="/security/verify/{{ v.id }}">{{ v.started_at | dt }}</a></td><td>{{ v.job_name }}</td><td>{{ v.dest_name }}</td>
+          <td>{{ badge(v.status) }}</td><td>{{ v.checked }}</td><td class="{{ 'err-text' if v.corrupted }}">{{ v.corrupted }}</td>
+          <td>{{ v.missing }}</td><td>{{ v.message }}</td></tr>
+    {% else %}<tr><td colspan="8" class="empty">Nessuna verifica eseguita.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="card">
+  <h2>Registro attività (audit log)</h2>
+  <p>Stato del registro: {% if chain.ok %}<span class="badge s-ok">{{ chain.message }}</span>{% else %}<span class="badge s-failed">MANOMESSO: {{ chain.message }}</span>{% endif %}</p>
+  <div class="scroll">
+  <table>
+    <thead><tr><th>Data</th><th>Chi</th><th>Azione</th><th>Dettagli</th></tr></thead>
+    <tbody>
+    {% for e in audit %}
+      <tr><td>{{ e.ts | dt }}</td><td>{{ 'utente' if e.actor == 'user' else 'sistema' }}</td><td><code>{{ e.action }}</code></td>
+          <td class="small">{% for k, v in e.details.items() %}{{ k }}={{ v }}{{ ', ' if not loop.last }}{% endfor %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="card">
+  <h2>Avvio automatico</h2>
+  <form method="post" action="/security/autostart" class="row">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    {% if autostart %}
+      <span class="badge s-ok">Attivo</span> <span>backup-sys parte all'accesso a Windows.</span>
+      <input type="hidden" name="enable" value="0"><button class="small push">Disattiva</button>
+    {% else %}
+      <span class="badge s-skipped">Non attivo</span> <span>I backup programmati girano solo se backup-sys è aperto.</span>
+      <input type="hidden" name="enable" value="1"><button class="primary small push">Attiva</button>
+    {% endif %}
+  </form>
+</section>
+
+<section class="card">
+  <h2>Cambia password</h2>
+  <form method="post" action="/security/password" class="row wrap">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <label>Attuale <input type="password" name="old" required autocomplete="current-password"></label>
+    <label>Nuova <input type="password" name="new" minlength="8" required autocomplete="new-password"></label>
+    <label>Ripeti <input type="password" name="new2" minlength="8" required autocomplete="new-password"></label>
+    <button>Cambia</button>
+  </form>
+</section>
+{% endblock %}

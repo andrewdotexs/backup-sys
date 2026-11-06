@@ -7,11 +7,13 @@ from __future__ import annotations
 
 import base64
 import contextlib
+import os
 import threading
 
 SERVICE = "backup-sys"
 
-_memory: dict[str, str] | None = None
+#: ``BACKUPSYS_KEYRING=memory`` usa un keyring in memoria (SOLO sviluppo/test: i segreti si perdono alla chiusura).
+_memory: dict[str, str] | None = {} if os.environ.get("BACKUPSYS_KEYRING") == "memory" else None
 _lock = threading.Lock()
 
 

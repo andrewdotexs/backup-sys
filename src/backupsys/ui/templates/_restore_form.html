@@ -1,0 +1,11 @@
+<form method="post" action="/restore" class="stack">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="job" value="{{ job.id }}"><input type="hidden" name="dest" value="{{ dest.id }}">
+  <input type="hidden" name="area" value="{{ restore_area or area }}"><input type="hidden" name="path" value="{{ restore_path }}">
+  <label class="check"><input type="radio" name="mode" value="original" checked> Nella posizione originale
+    {% if original %}<code>{{ original }}</code>{% endif %}</label>
+  <label class="check"><input type="radio" name="mode" value="other"> In un'altra cartella:</label>
+  <input name="target" placeholder="C:\Users\andrea\Desktop\Ripristinati">
+  <small class="muted">Nessun file esistente viene sovrascritto: se c'è già, il ripristinato prende il nome «… (ripristinato data)».</small>
+  <button class="primary small">Ripristina</button>
+</form>

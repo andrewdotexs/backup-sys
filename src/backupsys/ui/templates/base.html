@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}backup-sys{% endblock %} · backup-sys</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+{% if logged %}
+<header class="topbar">
+  <a class="brand" href="/"><img src="/static/icon.svg" alt="" width="24" height="24"> backup-sys</a>
+  <nav>
+    <a href="/" class="{{ 'active' if nav == 'dashboard' }}">Panoramica</a>
+    <a href="/jobs" class="{{ 'active' if nav == 'jobs' }}">Backup</a>
+    <a href="/destinations" class="{{ 'active' if nav == 'destinations' }}">Dischi</a>
+    <a href="/runs" class="{{ 'active' if nav == 'runs' }}">Storico</a>
+    <a href="/browse" class="{{ 'active' if nav == 'browse' }}">Ripristino</a>
+    <a href="/security" class="{{ 'active' if nav == 'security' }}">Sicurezza</a>
+  </nav>
+  <form method="post" action="/logout" class="logout">
+    <input type="hidden" name="csrf" value="{{ csrf }}">
+    <button class="link">Esci</button>
+  </form>
+</header>
+{% endif %}
+<main class="{{ 'narrow' if not logged }}">
+  {% if ok %}<div class="flash ok">{{ ok }}</div>{% endif %}
+  {% if err %}<div class="flash err">{{ err }}</div>{% endif %}
+  {% block content %}{% endblock %}
+</main>
+<footer>backup-sys {{ version }} · in ascolto solo su questo PC</footer>
+</body>
+</html>

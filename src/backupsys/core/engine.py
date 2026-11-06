@@ -54,6 +54,8 @@ class RunOptions:
     trigger: str = "manual"  # manual | schedule | connect | confirm
     override_guard: bool = False
     only_dest_ids: set[str] | None = None
+    #: dest_id -> percorsi (relativi al job) da riscrivere comunque (file trovati corrotti dalla verifica)
+    force_rels: dict[str, set[str]] = field(default_factory=dict)
 
 
 @dataclass
@@ -158,7 +160,11 @@ class BackupEngine:
             result.status = _overall(statuses)
             if result.status == db.OK and scanned.errors:
                 result.status = db.WARNING
-            result.message = "; ".join(f"{d.name}: {d.message}" for d in result.dests if d.message)
+            grouped: dict[str, list[str]] = {}
+            for d in result.dests:
+                if d.message:
+                    grouped.setdefault(d.message, []).append(d.name)
+            result.message = "; ".join(f"{', '.join(names)}: {msg}" for msg, names in grouped.items())
             if not selected:
                 result.message = "Nessuna destinazione configurata"
         except Exception as e:  # errore imprevisto: registrato, mai propagato al daemon
@@ -231,7 +237,9 @@ class BackupEngine:
 
         prog.phase, prog.files_done, prog.bytes_done = "plan", 0, 0
         emit(prog)
-        plan = build_plan(scanned.files, jlayout, dest.encrypted, cipher, job.deep_compare)
+        plan = build_plan(
+            scanned.files, jlayout, dest.encrypted, cipher, job.deep_compare, options.force_rels.get(dest.id)
+        )
         dr.errors.extend(plan.errors)
         dr.skipped = plan.count(Action.SKIP)
 
@@ -239,7 +247,7 @@ class BackupEngine:
         verdict = guard.evaluate(plan, job.guard_threshold_percent, job.guard_min_files)
         if verdict.suspicious and not options.override_guard:
             dr.status = db.PAUSED
-            dr.message = f"In pausa per sicurezza: {verdict.reason}. Conferma dall'interfaccia per procedere."
+            dr.message = f"In pausa per sicurezza: {verdict.reason}"
             self.audit.log("guard_paused", job=job.name, dest=dest.name, reason=verdict.reason)
             return dr
         if verdict.suspicious:

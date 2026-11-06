@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge %}
+{% block title %}Storico{% endblock %}
+{% block content %}
+<div class="row"><h1>Storico esecuzioni</h1>
+  <form method="get" action="/runs" class="push row">
+    <select name="job" data-autosubmit>
+      <option value="">Tutti i backup</option>
+      {% for j in jobs %}<option value="{{ j.id }}" {{ 'selected' if j.id == job_id }}>{{ j.name }}</option>{% endfor %}
+    </select>
+  </form>
+</div>
+<section class="card">
+<table>
+  <thead><tr><th>Avvio</th><th>Backup</th><th>Avvio da</th><th>Esito</th><th>File analizzati</th><th>Note</th></tr></thead>
+  <tbody>
+  {% for r in runs %}
+    <tr>
+      <td><a href="/runs/{{ r.id }}">{{ r.started_at | dt }}</a></td>
+      <td>{{ r.job_name }}</td>
+      <td>{{ r.trigger | trigger_label }}</td>
+      <td>{{ badge(r.status) }}</td>
+      <td>{{ r.files_scanned }}</td>
+      <td class="ellipsis">{{ r.message }}</td>
+    </tr>
+  {% else %}
+    <tr><td colspan="6" class="empty">Nessuna esecuzione.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</section>
+{% endblock %}

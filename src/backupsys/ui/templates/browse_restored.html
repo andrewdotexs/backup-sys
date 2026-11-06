@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Ripristino completato{% endblock %}
+{% block content %}
+<h1>Ripristino {{ 'completato' if not report.errors else 'con errori' }}</h1>
+<section class="card">
+  <p>{{ report.restored | length }} file ripristinati.</p>
+  {% if report.restored %}<details><summary>Elenco</summary><ul>{% for f in report.restored[:500] %}<li><code>{{ f }}</code></li>{% endfor %}</ul></details>{% endif %}
+  {% if report.errors %}
+  <h2>Errori</h2>
+  <table><tbody>{% for p, e in report.errors %}<tr><td><code>{{ p }}</code></td><td>{{ e }}</td></tr>{% endfor %}</tbody></table>
+  {% endif %}
+  <p><a class="button" href="/browse?job={{ job_id }}&dest={{ dest_id }}">Torna al ripristino</a></p>
+</section>
+{% endblock %}

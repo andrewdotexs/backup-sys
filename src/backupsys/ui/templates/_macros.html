@@ -1,0 +1,23 @@
+{% macro badge(status) -%}
+<span class="badge s-{{ status }}">{{ status | status_label }}</span>
+{%- endmacro %}
+
+{% macro run_button(job, csrf, label="Esegui ora", next="/", confirm=False) -%}
+<form method="post" action="/jobs/{{ job.id }}/run" class="inline">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <input type="hidden" name="next" value="{{ next }}">
+  {% if confirm %}<input type="hidden" name="confirm" value="1">{% endif %}
+  <button class="{{ 'danger' if confirm else 'primary' }} small"
+    {% if confirm %}data-confirm="Confermi che le modifiche sono legittime? Le versioni attuali resteranno comunque in versions/."{% endif %}>{{ label }}</button>
+</form>
+{%- endmacro %}
+
+{% macro space(info) -%}
+{% if info.status.available and info.total %}
+<div class="space">
+  <meter min="0" max="100" low="80" high="90" optimum="10" value="{{ '%.1f' % info.used_percent }}"></meter>
+  <small>{{ (info.total - info.free) | bytes }} usati su {{ info.total | bytes }} · liberi {{ info.free | bytes }}
+  · versioni {{ info.versions_bytes | bytes }} ({{ '%.0f' % info.versions_percent }}%, limite {{ '%.0f' % info.dest.retention.max_versions_percent }}%)</small>
+</div>
+{% endif %}
+{%- endmacro %}

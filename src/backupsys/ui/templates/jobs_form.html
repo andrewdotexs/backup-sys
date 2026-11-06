@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Nuovo backup' if is_new else job.name }}{% endblock %}
+{% block content %}
+<h1>{{ 'Nuovo backup' if is_new else 'Modifica «' ~ job.name ~ '»' }}</h1>
+<form method="post" action="/jobs/save" class="card stack">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  {% if not is_new %}<input type="hidden" name="id" value="{{ job.id }}">{% endif %}
+
+  <label>Nome <input name="name" value="{{ job.name }}" required></label>
+
+  <label>Cartelle da salvare <small>una per riga, es. <code>C:\Users\andrea\Documenti</code></small>
+    <textarea name="sources" rows="4" required>{{ job.sources | join('\n') }}</textarea></label>
+
+  <fieldset>
+    <legend>Dischi di destinazione</legend>
+    {% for d in dests %}
+      <label class="check"><input type="checkbox" name="destinations" value="{{ d.id }}" {{ 'checked' if d.id in job.destinations }}> {{ d.name }} <small class="muted">{{ d.path }}</small></label>
+    {% else %}
+      <p class="empty">Nessun disco configurato: <a href="/destinations/new">aggiungine uno</a>.</p>
+    {% endfor %}
+  </fieldset>
+
+  <fieldset>
+    <legend>Quando eseguire</legend>
+    <div class="row wrap">
+      <label>Frequenza
+        <select name="schedule_kind" id="schedule_kind">
+          {% for k, l in [('manual','Solo manuale'),('daily','Ogni giorno'),('weekly','Ogni settimana'),('interval','Ogni N ore'),('cron','Avanzato (cron)')] %}
+          <option value="{{ k }}" {{ 'selected' if sched.kind == k }}>{{ l }}</option>{% endfor %}
+        </select></label>
+      <label data-show="daily weekly">Ora <input type="time" name="schedule_time" value="{{ sched.time }}"></label>
+      <label data-show="weekly">Giorno
+        <select name="schedule_weekday">
+          {% for i, g in [(1,'lunedì'),(2,'martedì'),(3,'mercoledì'),(4,'giovedì'),(5,'venerdì'),(6,'sabato'),(0,'domenica')] %}
+          <option value="{{ i }}" {{ 'selected' if sched.weekday == i }}>{{ g }}</option>{% endfor %}
+        </select></label>
+      <label data-show="interval">Ogni <input type="number" name="schedule_interval" min="1" max="168" value="{{ sched.interval_hours }}"> ore</label>
+      <label data-show="cron">Espressione cron <input name="schedule_cron" value="{{ sched.cron }}" placeholder="0 13 * * 1-5"></label>
+    </div>
+    <label class="check"><input type="checkbox" name="schedule_on_connect" {{ 'checked' if sched.on_connect }}> Esegui anche quando collego un disco di backup</label>
+    <small class="muted">Se il PC era spento all'orario previsto, il backup parte appena possibile. Un disco scollegato viene aggiornato appena lo ricolleghi.</small>
+  </fieldset>
+
+  <details>
+    <summary>Opzioni avanzate</summary>
+    <div class="stack">
+      <label>File e cartelle da escludere <small>uno schema per riga (<code>*.tmp</code>, <code>**/node_modules/**</code>)</small>
+        <textarea name="excludes" rows="6">{{ job.excludes | join('\n') }}</textarea></label>
+      <label class="check"><input type="checkbox" name="deep_compare" {{ 'checked' if job.deep_compare }}> Confronto profondo con hash SHA-256 (più lento, rileva anche modifiche che non cambiano data e dimensione)</label>
+      <div class="row wrap">
+        <label>Anti-ransomware: pausa se cambia più del <input type="number" name="guard_threshold" min="1" max="100" step="1" value="{{ '%.0f' % job.guard_threshold_percent }}"> % dei file</label>
+        <label>…solo se il backup ha almeno <input type="number" name="guard_min_files" min="1" value="{{ job.guard_min_files }}"> file</label>
+      </div>
+      <label>Verifica di integrità automatica ogni <input type="number" name="verify_every_days" min="1" value="{{ job.verify_every_days or '' }}"> giorni <small>(vuoto = solo manuale)</small></label>
+    </div>
+  </details>
+
+  <label class="check"><input type="checkbox" name="enabled" {{ 'checked' if job.enabled }}> Attivo</label>
+
+  <div class="row">
+    <button class="primary">Salva</button>
+    <a class="button" href="/jobs">Annulla</a>
+  </div>
+</form>
+
+{% if not is_new %}
+<form method="post" action="/jobs/{{ job.id }}/delete" class="card danger-zone">
+  <input type="hidden" name="csrf" value="{{ csrf }}">
+  <h2>Rimuovi questo backup</h2>
+  <p>Il job viene tolto dalla configurazione. <strong>I file già salvati sui dischi non vengono cancellati.</strong></p>
+  <button class="danger" data-confirm="Rimuovere «{{ job.name }}» dalla configurazione? I dati sui dischi restano.">Rimuovi</button>
+</form>
+{% endif %}
+{% endblock %}

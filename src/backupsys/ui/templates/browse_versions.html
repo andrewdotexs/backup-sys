@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Versioni{% endblock %}
+{% block content %}
+<h1>Versioni di <code>{{ rel.split('/')[-1].removesuffix('.bsenc') }}</code></h1>
+<p class="muted">{{ original or rel }}</p>
+<p><a href="/browse?job={{ job.id }}&dest={{ dest.id }}&path={{ '/'.join(rel.split('/')[:-1]) | q }}">← torna alla cartella</a></p>
+{% for v in versions %}
+<section class="card">
+  <div class="row"><strong>{{ v.label }}</strong><span class="muted">{{ v.size | bytes }} · modificato {{ v.mtime | dt }}</span></div>
+  <details>
+    <summary>Ripristina questa versione</summary>
+    {% set restore_area = v.area %}{% set restore_path = v.rel %}{% include "_restore_form.html" %}
+  </details>
+</section>
+{% else %}
+<p class="empty">Nessuna copia trovata.</p>
+{% endfor %}
+{% endblock %}

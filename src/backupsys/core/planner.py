@@ -99,12 +99,18 @@ def build_plan(
     encrypted: bool = False,
     cipher: crypto.StreamCipher | None = None,
     deep: bool = False,
+    force: set[str] | None = None,
 ) -> Plan:
+    """``force``: percorsi (relativi alla cartella del job, es. ``current/C/...``) da riscrivere comunque,
+    ad esempio perché la verifica di integrità li ha trovati corrotti."""
     plan = Plan()
+    forced = {os.path.normpath(os.path.join(layout.root, *r.split("/"))) for r in (force or set())}
     for src in files:
         dest = dest_path_for(layout, src, encrypted)
         try:
             action = decide(src, dest, cipher, encrypted, deep)
+            if action is Action.SKIP and os.path.normpath(dest) in forced:
+                action = Action.NEW_VERSION
         except OSError as e:
             plan.errors.append((src.abs_path, f"Confronto non riuscito: {e.strerror or e}"))
             continue

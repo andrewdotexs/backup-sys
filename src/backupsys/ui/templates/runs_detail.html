@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge %}
+{% block title %}Esecuzione {{ run.id }}{% endblock %}
+{% block content %}
+<h1>{{ run.job_name }} · {{ run.started_at | dt }}</h1>
+<section class="card">
+  <dl class="kv">
+    <dt>Esito</dt><dd>{{ badge(run.status) }}</dd>
+    <dt>Avviata</dt><dd>{{ run.started_at | dt }} ({{ run.trigger | trigger_label }})</dd>
+    <dt>Terminata</dt><dd>{{ run.finished_at | dt }}</dd>
+    <dt>File analizzati</dt><dd>{{ run.files_scanned }}</dd>
+    {% if run.message %}<dt>Note</dt><dd>{{ run.message }}</dd>{% endif %}
+  </dl>
+</section>
+<section class="card">
+  <h2>Per disco</h2>
+  <table>
+    <thead><tr><th>Disco</th><th>Esito</th><th>Nuovi</th><th>Nuove versioni</th><th>Invariati</th><th>Dati copiati</th><th>Versioni ruotate</th><th>Errori</th><th>Note</th></tr></thead>
+    <tbody>
+    {% for d in dests %}
+      <tr><td>{{ d.dest_name }}</td><td>{{ badge(d.status) }}</td><td>{{ d.copied }}</td><td>{{ d.versioned }}</td>
+          <td>{{ d.skipped }}</td><td>{{ d.bytes | bytes }}</td>
+          <td>{{ d.pruned_versions }}{% if d.pruned_versions %} ({{ d.pruned_bytes | bytes }}){% endif %}</td>
+          <td>{{ d.errors }}</td><td>{{ d.message }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% if errors %}
+<section class="card">
+  <h2>Errori ({{ errors | length }})</h2>
+  <p class="muted">I file non copiati verranno ritentati automaticamente alla prossima esecuzione.</p>
+  <table>
+    <thead><tr><th>File</th><th>Problema</th></tr></thead>
+    <tbody>{% for e in errors %}<tr><td><code>{{ e.path }}</code></td><td>{{ e.error }}</td></tr>{% endfor %}</tbody>
+  </table>
+</section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge, run_button, space %}
+{% block title %}Panoramica{% endblock %}
+{% block content %}
+<h1>Panoramica</h1>
+
+<section id="live" class="card live {{ 'hidden' if not snapshot.running }}">
+  <div class="row">
+    <strong id="live-title">{% if snapshot.running %}{{ snapshot.running.job_name }}{% endif %}</strong>
+    <span id="live-phase" class="muted"></span>
+    <form method="post" action="/cancel" class="inline push">
+      <input type="hidden" name="csrf" value="{{ csrf }}">
+      <button class="small" data-confirm="Interrompere l'esecuzione in corso?">Interrompi</button>
+    </form>
+  </div>
+  <progress id="live-bar" max="100" value="0"></progress>
+  <small id="live-detail" class="muted ellipsis"></small>
+</section>
+
+{% for r in paused %}
+<section class="card alert">
+  <h2>⚠ «{{ r.job.name }}» è in pausa per sicurezza</h2>
+  <p>{{ r.last.message }}</p>
+  <p>Se hai appena riorganizzato o modificato molti file di proposito, puoi confermare. Se non sai spiegarti queste modifiche
+     <strong>potrebbe trattarsi di un ransomware</strong>: non confermare, scollega i dischi di backup e controlla il PC.</p>
+  <div class="row">{{ run_button(r.job, csrf, "Confermo, procedi con il backup", confirm=True) }}
+    <a class="button small" href="/runs/{{ r.last.id }}">Dettagli</a></div>
+</section>
+{% endfor %}
+
+<section class="card">
+  <div class="row"><h2>Backup</h2><a class="button small push" href="/jobs/new">+ Nuovo backup</a></div>
+  {% if not jobs %}
+    <p class="empty">Nessun backup configurato. <a href="/destinations/new">Aggiungi prima un disco</a>, poi <a href="/jobs/new">crea un backup</a>.</p>
+  {% else %}
+  <table>
+    <thead><tr><th>Nome</th><th>Programmazione</th><th>Ultima esecuzione</th><th>Prossima</th><th></th></tr></thead>
+    <tbody>
+    {% for r in jobs %}
+      <tr>
+        <td><a href="/jobs/{{ r.job.id }}">{{ r.job.name }}</a>{% if not r.job.enabled %} <span class="badge">disattivato</span>{% endif %}</td>
+        <td>{{ r.job.schedule | describe }}</td>
+        <td>{% if r.last %}{{ badge(r.last.status) }} <a href="/runs/{{ r.last.id }}">{{ r.last.started_at | dt }}</a>{% else %}<span class="muted">mai</span>{% endif %}</td>
+        <td>{{ r.next | dt if r.next else '—' }}</td>
+        <td class="right">{% if r.busy %}<span class="badge s-running">in corso / in coda</span>{% else %}{{ run_button(r.job, csrf) }}{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+
+<section class="card">
+  <div class="row"><h2>Dischi di backup</h2><a class="button small push" href="/destinations/new">+ Aggiungi disco</a></div>
+  <div class="grid">
+  {% for i in infos %}
+    <a class="tile" href="/destinations/{{ i.dest.id }}">
+      <div class="row"><strong>{{ i.dest.name }}</strong>
+        <span class="badge {{ 's-ok' if i.status.ready else ('s-failed' if i.status.available else 's-skipped') }} push">
+          {{ 'Collegato' if i.status.ready else ('Problema' if i.status.available else 'Non collegato') }}</span></div>
+      <small class="muted">{{ i.dest.path }}{% if i.dest.encrypted %} · 🔒 cifrato{% endif %}</small>
+      {% if not i.status.ready %}<small>{{ i.status.message }}</small>{% endif %}
+      {{ space(i) }}
+    </a>
+  {% else %}
+    <p class="empty">Nessun disco configurato.</p>
+  {% endfor %}
+  </div>
+</section>
+{% endblock %}

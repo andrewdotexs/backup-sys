@@ -22,7 +22,7 @@ dependencies = [
 ]
 
 [project.scripts]
-backup-sys = "backupsys.cli:app"
+backup-sys = "backupsys.cli:main"
 
 [dependency-groups]
 dev = [

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge, run_button %}
+{% block title %}Backup{% endblock %}
+{% block content %}
+<div class="row"><h1>Backup</h1><a class="button primary push" href="/jobs/new">+ Nuovo backup</a></div>
+{% for r in jobs %}
+<section class="card">
+  <div class="row">
+    <h2><a href="/jobs/{{ r.job.id }}">{{ r.job.name }}</a></h2>
+    {% if not r.job.enabled %}<span class="badge">disattivato</span>{% endif %}
+    <div class="push row">
+      {% if not r.busy %}{{ run_button(r.job, csrf, next="/jobs") }}{% endif %}
+      <a class="button small" href="/jobs/{{ r.job.id }}">Modifica</a>
+      <a class="button small" href="/runs?job={{ r.job.id }}">Storico</a>
+    </div>
+  </div>
+  <dl class="kv">
+    <dt>Cartelle</dt><dd>{% for s in r.job.sources %}<code>{{ s }}</code><br>{% endfor %}</dd>
+    <dt>Dischi</dt><dd>{% for d in r.job.destinations %}{{ dests[d].name if d in dests else '(rimosso)' }}{{ ', ' if not loop.last }}{% else %}<span class="err-text">nessuno</span>{% endfor %}</dd>
+    <dt>Quando</dt><dd>{{ r.job.schedule | describe }}{% if r.next %} · prossimo: {{ r.next | dt }}{% endif %}</dd>
+    <dt>Ultimo esito</dt><dd>{% if r.last %}{{ badge(r.last.status) }} {{ r.last.started_at | dt }}{% else %}mai eseguito{% endif %}</dd>
+  </dl>
+</section>
+{% else %}
+<p class="empty">Nessun backup configurato.</p>
+{% endfor %}
+{% endblock %}

@@ -1,4 +1,4 @@
-from backupsys.cli import app
+from backupsys.cli import main
 
 if __name__ == "__main__":
-    app()
+    main()

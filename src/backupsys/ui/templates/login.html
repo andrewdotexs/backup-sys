@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Accesso{% endblock %}
+{% block content %}
+<section class="card">
+  <h1>backup-sys</h1>
+  {% if locked %}<p class="flash err">Troppi tentativi errati. Riprova tra {{ locked }} secondi.</p>{% endif %}
+  <form method="post" action="/login" class="stack">
+    <label>Password <input type="password" name="password" required autofocus autocomplete="current-password"></label>
+    <button class="primary">Accedi</button>
+  </form>
+</section>
+{% endblock %}
