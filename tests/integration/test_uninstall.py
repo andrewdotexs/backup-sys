@@ -14,9 +14,15 @@ from tests.conftest import Env
 
 
 @pytest.fixture(autouse=True)
-def no_daemon(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def no_daemon(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(uninstall, "stop_running_daemon", lambda port, timeout=15: True)
-    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "xdg"))  # avvio automatico (Linux) isolato
+    # avvio automatico finto: i test non devono toccare il registro di Windows o ~/.config reali
+    from backupsys.scheduler import autostart
+
+    state = {"on": False}
+    monkeypatch.setattr(autostart, "install", lambda: state.update(on=True) or "cmd")
+    monkeypatch.setattr(autostart, "uninstall", lambda: state.update(on=False))
+    monkeypatch.setattr(autostart, "is_installed", lambda: state["on"])
 
 
 def test_removes_local_data_secrets_and_autostart_but_not_backups(env: Env) -> None:
