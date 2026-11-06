@@ -37,7 +37,7 @@ def test_modified_file_keeps_old_version(env: Env) -> None:
     env.write("a.txt", "versione 2 più lunga")
     r = env.run()
     assert r.dests[0].versioned == 1
-    assert (env.current() / "a.txt").read_text() == "versione 2 più lunga"
+    assert (env.current() / "a.txt").read_text(encoding="utf-8") == "versione 2 più lunga"
     olds = list(env.versions().rglob("a.txt"))
     assert len(olds) == 1 and olds[0].read_text() == "versione 1"
 
