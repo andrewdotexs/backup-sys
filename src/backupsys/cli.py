@@ -179,6 +179,51 @@ def reset_password() -> None:
     typer.echo("Password aggiornata.")
 
 
+@app.command()
+def uninstall(
+    yes: bool = typer.Option(False, "--yes", help="Non chiedere conferma"),
+    keep_program: bool = typer.Option(False, "--keep-program", help="Rimuovi solo i dati, non i file del programma"),
+) -> None:
+    """Disinstalla backup-sys e rimuove i dati locali. I dischi di backup NON vengono toccati."""
+    from backupsys import uninstall as u
+
+    frozen = getattr(sys, "frozen", False)
+
+    def pause() -> None:
+        if frozen and not yes:  # la finestra della console si chiuderebbe subito
+            typer.prompt("Premi Invio per chiudere", default="", show_default=False)
+
+    plan = u.build_plan(include_program=not keep_program)
+    typer.echo("Disinstallazione di backup-sys\n")
+    for line in u.describe(plan):
+        typer.echo(line)
+    if plan.problems:
+        typer.echo("\nDisinstallazione bloccata per sicurezza:")
+        for pr in plan.problems:
+            typer.echo(f"  - {pr}")
+        pause()
+        raise typer.Exit(2)
+    if not yes:
+        answer = typer.prompt("\nPer confermare scrivi RIMUOVI", default="", show_default=False)
+        if answer.strip().upper() != "RIMUOVI":
+            typer.echo("Annullato: nulla è stato rimosso.")
+            pause()
+            raise typer.Exit(1)
+    errors = u.execute(plan)
+    if errors:
+        typer.echo("\nCompletato con problemi:")
+        for e in errors:
+            typer.echo(f"  - {e}")
+        pause()
+        raise typer.Exit(1)
+    typer.echo("\nbackup-sys è stato disinstallato. I dischi di backup sono intatti.")
+    if plan.program_dir is not None:
+        typer.echo("I file del programma verranno eliminati tra qualche secondo, dopo la chiusura di questa finestra.")
+    elif not keep_program:
+        typer.echo("Installazione da sorgente: elimina a mano la cartella del progetto se non ti serve più.")
+    pause()
+
+
 @autostart_app.command("on")
 def autostart_on() -> None:
     from backupsys.scheduler import autostart

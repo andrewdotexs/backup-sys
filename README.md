@@ -37,6 +37,26 @@ uv sync
 uv run backup-sys daemon --open
 ```
 
+### Disinstallazione
+Avvia **`backup-sys-uninstall.exe`** dalla cartella del programma (oppure `backup-sys uninstall` da sorgente).
+Prima di chiedere conferma mostra cosa rimuoverà; poi bisogna scrivere `RIMUOVI`.
+
+Rimuove:
+- la configurazione e la password dell'interfaccia (`%APPDATA%\backup-sys`);
+- catalogo, storico, audit log e log (`%LOCALAPPDATA%\backup-sys`);
+- le credenziali nel Gestore credenziali di Windows (password di rete, chiavi di cifratura, chiave dell'audit log);
+- l'avvio automatico;
+- i file del programma.
+
+Del programma vengono rimossi solo `backup-sys*.exe` e `_internal`. La cartella viene eliminata solo se poi
+resta vuota: se avevi estratto il programma, per esempio, sul Desktop, il resto del Desktop non viene toccato.
+
+**I dischi di backup non vengono mai toccati**: restano leggibili con Esplora file (o con `decrypt` se cifrati).
+Se un disco è cifrato, dopo la disinstallazione serviranno la passphrase o il codice di recupero.
+Per eliminare i backup, formatta il disco.
+
+Opzioni: `--keep-program` rimuove solo i dati; `--yes` salta la conferma.
+
 ---
 
 ## Primi passi
@@ -130,8 +150,9 @@ o altrove. **Nessun file sul PC viene sovrascritto**: se esiste già, il riprist
 | `backup-sys decrypt SORGENTE DESTINAZIONE --code …` | Decifra file di un disco cifrato |
 | `backup-sys autostart on` / `off` | Attiva o disattiva l'avvio automatico |
 | `backup-sys reset-password` | Nuova password dell'interfaccia (serve accesso al PC) |
+| `backup-sys uninstall [--keep-program] [--yes]` | Disinstalla e rimuove i dati locali (i dischi di backup restano) |
 
-Con l'eseguibile Windows usa `backup-sys-cli.exe` al posto di `backup-sys`.
+Con l'eseguibile Windows usa `backup-sys-cli.exe` al posto di `backup-sys`; per la disinstallazione basta un doppio clic su `backup-sys-uninstall.exe`.
 
 ## File locali
 | Cosa | Dove |

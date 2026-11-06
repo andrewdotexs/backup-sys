@@ -33,6 +33,7 @@ ALLOWED = {
     ("config/store.py", "os.replace"): "salvataggio atomico del file di configurazione locale",
     ("security/auth.py", "os.replace"): "salvataggio atomico dell'hash password locale",
     ("scheduler/autostart.py", ".unlink()"): "rimozione del file di avvio automatico locale (Linux)",
+    ("uninstall.py", "shutil.rmtree"): "disinstallazione: solo le cartelle dati locali di backup-sys, verificate",
 }
 
 

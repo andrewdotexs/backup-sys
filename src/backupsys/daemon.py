@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import json
 import logging
 import threading
-import urllib.request
 import webbrowser
 from logging.handlers import RotatingFileHandler
 
-from backupsys import appdirs
+from backupsys import appdirs, localhttp
 
 
 def setup_logging(verbose: bool = False) -> None:
@@ -26,11 +24,8 @@ def setup_logging(verbose: bool = False) -> None:
 
 
 def already_running(port: int) -> bool:
-    try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/healthz", timeout=2) as r:
-            return bool(json.loads(r.read()).get("ok"))
-    except Exception:
-        return False
+    info = localhttp.healthz(port)
+    return bool(info and info.get("ok"))
 
 
 def run(port: int | None = None, tray: bool = True, open_browser: bool = False) -> None:
