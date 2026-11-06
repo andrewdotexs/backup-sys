@@ -2,6 +2,11 @@
 
 Ogni disco viene riconosciuto dal marker ``backup-sys/.bsys-volume.json`` e non dalla lettera
 di unità: se al posto di E: c'è un disco diverso il backup su quella destinazione non parte.
+
+Un disco può diventare un disco di backup solo se è **vuoto** (appena formattato): per i dischi locali
+si controlla l'intero volume, ignorando soltanto le cartelle di sistema di Windows; per i percorsi di rete
+la cartella di destinazione. Il controllo vale solo per l'inizializzazione: un disco già inizializzato
+(marker presente) viene riconosciuto senza ripetere il controllo.
 """
 
 from __future__ import annotations
@@ -14,7 +19,7 @@ from datetime import datetime
 from pathlib import Path
 
 from backupsys.config.models import Destination
-from backupsys.core.layout import DestLayout
+from backupsys.core.layout import ROOT_DIR, DestLayout
 from backupsys.destinations import network
 from backupsys.security import crypto, secrets
 
@@ -48,6 +53,82 @@ def write_marker(layout: DestLayout, dest: Destination) -> str:
     return vid
 
 
+#: Voci create da Windows su ogni volume: non contano come "contenuto" del disco.
+SYSTEM_ENTRIES = frozenset({"system volume information", "$recycle.bin", "recycler", "desktop.ini", "thumbs.db"})
+MAX_LISTED = 5
+
+
+class DiskNotEmptyError(ValueError):
+    pass
+
+
+def volume_root(path: str) -> Path:
+    """Radice del volume che contiene ``path`` (``E:\\`` su Windows, punto di mount su POSIX)."""
+    p = Path(os.path.abspath(path))
+    if os.name == "nt":
+        drive = os.path.splitdrive(str(p))[0]
+        return Path(drive + "\\") if drive else p
+    while not os.path.ismount(p) and p.parent != p:
+        p = p.parent
+    return p
+
+
+def _entries(d: Path) -> list[str]:
+    try:
+        return [e for e in os.listdir(d) if e.lower() not in SYSTEM_ENTRIES]
+    except OSError:
+        return []
+
+
+def _same(a: str, b: str) -> bool:
+    return a.lower() == b.lower() if os.name == "nt" else a == b
+
+
+def foreign_entries(dest: Destination) -> list[str]:
+    """Contenuti estranei che impediscono di usare la destinazione come disco di backup.
+
+    Dischi locali: dalla radice del volume fino alla cartella di destinazione ogni livello può contenere
+    solo la cartella successiva del percorso; la destinazione può contenere solo ``backup-sys``.
+    Percorsi di rete: solo la cartella di destinazione viene controllata.
+    """
+    target = Path(os.path.abspath(dest.path))
+    parts: tuple[str, ...]
+    if dest.kind == "network":
+        root, parts = target, ()
+    else:
+        root = volume_root(dest.path)
+        try:
+            parts = target.relative_to(root).parts
+        except ValueError:
+            root, parts = target, ()
+    found: list[str] = []
+    cur = root
+    for nxt in [*parts, None]:
+        if not cur.is_dir():
+            break  # da qui in giù le cartelle non esistono ancora: verranno create
+        allowed = nxt if nxt is not None else ROOT_DIR
+        found += [str(cur / e) for e in _entries(cur) if not _same(e, allowed)]
+        if nxt is None:
+            break
+        cur = cur / nxt
+    return found
+
+
+def _not_empty_message(found: list[str]) -> str:
+    shown = ", ".join(Path(f).name for f in found[:MAX_LISTED])
+    more = f" e altri {len(found) - MAX_LISTED}" if len(found) > MAX_LISTED else ""
+    return f"Il disco non è vuoto ({shown}{more}): per sicurezza va formattato (NTFS) prima di usarlo come backup"
+
+
+def _container_available(dest: Destination) -> bool:
+    """La cartella di destinazione non esiste ancora, ma il disco/la condivisione che la conterrà sì."""
+    if dest.kind == "network":
+        share = network.unc_share(dest.path)
+        return bool(share and os.path.isdir(share))
+    root = volume_root(dest.path)
+    return root != Path(os.path.abspath(dest.path)) and root.is_dir()
+
+
 def is_reachable(dest: Destination) -> bool:
     if dest.kind == "network":
         network.ensure_connected(dest)
@@ -60,15 +141,18 @@ def check(dest: Destination) -> DestStatus:
         reachable = is_reachable(dest)
     except OSError as e:
         return DestStatus(False, False, f"Non raggiungibile: {e}")
-    if not reachable:
+    if not reachable and not (dest.volume_id is None and _container_available(dest)):
         what = "Percorso di rete non raggiungibile" if dest.kind == "network" else "Disco non collegato"
         return DestStatus(False, False, what)
     layout = DestLayout(Path(dest.path))
-    marker = read_marker(layout)
+    marker = read_marker(layout) if reachable else None
     if dest.volume_id is None:
         if marker:
             return DestStatus(True, True, "Disco con backup esistente, verrà associato", marker["volume_id"])
-        return DestStatus(True, True, "Disco nuovo, verrà inizializzato")
+        found = foreign_entries(dest)
+        if found:
+            return DestStatus(True, False, _not_empty_message(found))
+        return DestStatus(True, True, "Disco vuoto, verrà inizializzato al primo backup")
     if marker is None:
         return DestStatus(
             True, False, "Disco non riconosciuto: manca il marker backup-sys (disco diverso o cartella rimossa)"
@@ -79,11 +163,19 @@ def check(dest: Destination) -> DestStatus:
 
 
 def bind(dest: Destination) -> str:
-    """Inizializza o associa il disco. Restituisce il volume_id da salvare in configurazione."""
+    """Inizializza o associa il disco. Restituisce il volume_id da salvare in configurazione.
+
+    Un disco senza marker viene inizializzato solo se è vuoto (``DiskNotEmptyError`` altrimenti);
+    la cartella di destinazione viene creata se manca.
+    """
     layout = DestLayout(Path(dest.path))
     marker = read_marker(layout)
     if marker:
         return marker["volume_id"]
+    found = foreign_entries(dest)
+    if found:
+        raise DiskNotEmptyError(_not_empty_message(found))
+    os.makedirs(dest.path, exist_ok=True)
     return write_marker(layout, dest)
 
 

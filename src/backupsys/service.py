@@ -6,6 +6,7 @@ thread worker a bassa priorità, per non rallentare il PC.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import sys
@@ -25,7 +26,6 @@ from backupsys.core import verify as verify_mod
 from backupsys.core.engine import BackupEngine, Progress, RunOptions, RunResult
 from backupsys.core.fsutil import disk_usage, human_bytes
 from backupsys.core.layout import DestLayout
-from backupsys.core.retention import tree_size
 from backupsys.destinations import base as destinations
 from backupsys.security import crypto, secrets
 from backupsys.security.audit import AuditLog
@@ -63,15 +63,36 @@ class DestInfo:
     status: destinations.DestStatus
     total: int = 0
     free: int = 0
+    backup_bytes: int = 0
     versions_bytes: int = 0
+    measured_at: datetime | None = None
+
+    @property
+    def quota(self) -> int | None:
+        gb = self.dest.retention.max_backup_gb
+        return int(gb * 2**30) if gb else None
+
+    @property
+    def capacity(self) -> int:
+        return self.quota or self.total
+
+    @property
+    def other_bytes(self) -> int:
+        """Spazio occupato da file che non sono di backup-sys (rilevante sui percorsi di rete condivisi)."""
+        return max(0, self.total - self.free - self.backup_bytes)
 
     @property
     def used_percent(self) -> float:
         return 100 * (self.total - self.free) / self.total if self.total else 0.0
 
     @property
+    def backup_percent(self) -> float:
+        """Occupazione di backup-sys rispetto alla quota (o al disco)."""
+        return 100 * self.backup_bytes / self.capacity if self.capacity else 0.0
+
+    @property
     def versions_percent(self) -> float:
-        return 100 * self.versions_bytes / self.total if self.total else 0.0
+        return 100 * self.versions_bytes / self.capacity if self.capacity else 0.0
 
 
 def _background_priority() -> None:
@@ -174,9 +195,14 @@ class BackupService:
     def setup_encryption(self, dest_id: str, passphrase: str) -> str:
         """Crea la chiave sul disco e la salva nel Credential Manager. Restituisce il codice di recupero."""
         dest = self.config.destination(dest_id)
+        status = destinations.check(dest)
+        if not status.ready:
+            raise ValueError(status.message)
+        if dest.volume_id is None:  # inizializza il disco (vuoto) prima di metterci la chiave
+            vid = destinations.bind(dest)
+            self._on_bind(dest_id, vid)
+            dest = self.config.destination(dest_id)
         layout = DestLayout(Path(dest.path))
-        if not os.path.isdir(dest.path):
-            raise FileNotFoundError("Collega il disco prima di attivare la cifratura")
         keyfile = layout.root / crypto.KEYFILE_NAME
         if keyfile.exists():
             key = crypto.unlock_keyfile(keyfile, passphrase)
@@ -210,13 +236,12 @@ class BackupService:
             return cached[1]
         status = destinations.check(dest)
         info = DestInfo(dest, status)
-        if status.available:
-            try:
+        if status.available and os.path.isdir(dest.path):
+            with contextlib.suppress(OSError):
                 info.total, _u, info.free = disk_usage(dest.path)
-                layout = DestLayout(Path(dest.path))
-                info.versions_bytes = sum(tree_size(j / "versions") for j in layout.job_roots())
-            except OSError:
-                pass
+        usage = self.catalog.usage(dest.id)
+        if usage:  # misurata a fine backup: evita di rileggere tutto il disco a ogni apertura della pagina
+            info.backup_bytes, info.versions_bytes, info.measured_at = usage
         self._dest_cache[dest.id] = (time.time(), info)
         return info
 

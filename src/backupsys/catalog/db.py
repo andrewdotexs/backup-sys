@@ -69,6 +69,12 @@ CREATE TABLE IF NOT EXISTS verify_issues (
     path TEXT NOT NULL,
     issue TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS dest_usage (
+    dest_id TEXT PRIMARY KEY,
+    backup_bytes INTEGER NOT NULL,
+    versions_bytes INTEGER NOT NULL,
+    measured_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS dest_state (
     job_id TEXT NOT NULL,
     dest_id TEXT NOT NULL,
@@ -268,3 +274,19 @@ class Catalog:
                 (job_id, dest_id),
             ).fetchone()
             return datetime.fromisoformat(r["started_at"]) if r else None
+
+    # ------------------------------------------------------------------ occupazione dei dischi
+    def record_usage(self, dest_id: str, backup_bytes: int, versions_bytes: int) -> None:
+        with self._conn() as c:
+            c.execute(
+                "INSERT OR REPLACE INTO dest_usage(dest_id, backup_bytes, versions_bytes, measured_at) "
+                "VALUES (?,?,?,?)",
+                (dest_id, backup_bytes, versions_bytes, _now()),
+            )
+
+    def usage(self, dest_id: str) -> tuple[int, int, datetime] | None:
+        with self._conn() as c:
+            r = c.execute("SELECT * FROM dest_usage WHERE dest_id=?", (dest_id,)).fetchone()
+            if r is None:
+                return None
+            return int(r["backup_bytes"]), int(r["versions_bytes"]), datetime.fromisoformat(r["measured_at"])

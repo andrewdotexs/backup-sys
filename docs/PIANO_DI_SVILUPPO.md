@@ -192,8 +192,9 @@ I file sono **in chiaro e navigabili** (se la cifratura non è attiva): puoi rec
 
 ### 4.5 Rotazione delle versioni (D3)
 Il modulo `core/retention.py` è **l'unico** autorizzato a cancellare, e solo cartelle `versions/<data>` intere:
-- **Quando**: se le versioni occupano più di `max_versions_percent` (default 30%) della capacità del disco,
-  oppure se lo spazio libero scende sotto `min_free_percent` (default 10%).
+- **Quando** (opzione b, decisa il 2026-11-06): se le versioni occupano più di `max_versions_percent` (default 30%)
+  della capacità (la quota `max_backup_gb` se impostata, altrimenti il disco); se backup-sys supererebbe la quota;
+  oppure se lo spazio libero non basta per la copia in corso (+ margine del 2%, max 64 MB).
 - **Cosa**: le cartelle `versions/<data>` più vecchie, una alla volta, finché si rientra nei limiti.
 - **Mai**: nulla dentro `current/`; nessuna versione più giovane di `min_age_days` (default 30 giorni);
   nessun percorso che non sia esattamente `…/backup-sys/<job>/versions/<timestamp>` (controllo sul percorso risolto).
@@ -207,6 +208,7 @@ Il test AST anti-cancellazione permette le API di cancellazione **solo** in `ret
 
 ## 5. Destinazioni
 - **Dischi locali/USB**: identificati dal file marker `.bsys-volume.json` (UUID), non dalla lettera di unità. Se colleghi un disco diverso con la stessa lettera, il backup non parte.
+- **Solo dischi vuoti** (decisione del 2026-11-06, per sicurezza): un disco viene inizializzato solo se l'intero volume è vuoto (ignorando le cartelle di sistema di Windows); per i percorsi di rete deve essere vuota la cartella indicata. Le sottocartelle mancanti vengono create.
 - **Rete**: percorsi UNC (`\\NAS\backup`) o condivisioni montate (SMB/NFS). Credenziali salvate nel keyring del sistema operativo, mai nel file di config.
 - **Più destinazioni per job**: ognuna con stato indipendente (un disco può essere aggiornato a ieri, un altro alla settimana scorsa).
 - **Controllo spazio**: stima dei byte da copiare prima di iniziare; se lo spazio non basta il job si ferma *prima* di iniziare e avvisa l'utente (il programma non può fare pulizia da sé, per definizione).

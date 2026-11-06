@@ -106,7 +106,7 @@ def dest_from_form(form: dict[str, object], existing: Destination | None) -> Des
         "network_username": g("network_username").strip() or None,
         "retention": RetentionPolicy(
             max_versions_percent=float(g("max_versions_percent", "30") or 30),
-            min_free_percent=float(g("min_free_percent", "10") or 10),
+            max_backup_gb=float(g("max_backup_gb").replace(",", ".")) if g("max_backup_gb").strip() else None,
             min_age_days=int(g("min_age_days", "30") or 30),
         ),
     }

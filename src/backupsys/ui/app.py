@@ -385,7 +385,7 @@ def create_app(
         await form_checked(request, s)
         try:
             service.rebind_destination(dest_id)
-        except OSError as e:
+        except (OSError, ValueError) as e:
             return back(f"/destinations/{dest_id}", err=str(e))
         return back(f"/destinations/{dest_id}", ok="Disco associato a questa destinazione")
 

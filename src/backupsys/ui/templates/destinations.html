@@ -7,10 +7,11 @@
 <section class="card">
   <div class="row">
     <h2><a href="/destinations/{{ i.dest.id }}">{{ i.dest.name }}</a></h2>
-    <span class="badge {{ 's-ok' if i.status.ready else ('s-failed' if i.status.available else 's-skipped') }}">{{ i.status.message }}</span>
+    <span class="badge {{ 's-ok' if i.status.ready else ('s-failed' if i.status.available else 's-skipped') }}">{{ 'Pronto' if i.status.ready else ('Problema' if i.status.available else 'Non collegato') }}</span>
     <a class="button small push" href="/destinations/{{ i.dest.id }}">Gestisci</a>
   </div>
   <small class="muted">{{ i.dest.path }} · {{ 'rete' if i.dest.kind == 'network' else 'disco locale/USB' }}{% if i.dest.encrypted %} · 🔒 cifrato{% endif %}</small>
+  {% if not i.status.ready or i.dest.volume_id is none %}<p class="{{ 'err-text' if i.status.available and not i.status.identity_ok else 'muted' }}">{{ i.status.message }}</p>{% endif %}
   {{ space(i) }}
 </section>
 {% else %}

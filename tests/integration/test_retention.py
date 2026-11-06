@@ -20,10 +20,13 @@ def _make(disk: Path, job: str, ts: datetime, size: int) -> Path:
     return v.parent.parent
 
 
-def _usage(total: int, disk: Path):  # type: ignore[no-untyped-def]
+def _usage(total: int, disk: Path, free_bonus: int = 2 * retention.SPACE_MARGIN):  # type: ignore[no-untyped-def]
+    """Disco finto: capacità ``total`` per le percentuali; ``free_bonus`` evita di far scattare la regola
+    "lo spazio libero non basta" nei test che non la riguardano."""
+
     def f(_p: Path) -> tuple[int, int, int]:
         used = retention.tree_size(disk)
-        return total, used, total - used
+        return total, used, total - used + free_bonus
 
     return f
 
@@ -34,7 +37,7 @@ def test_prunes_oldest_until_within_limits(tmp_path: Path) -> None:
     # versioni = 5000 byte su un disco "da 10000": limite 30% = 3000 -> devono sparire le 2 più vecchie
     rep = retention.enforce(
         DestLayout(tmp_path),
-        RetentionPolicy(max_versions_percent=30, min_free_percent=0, min_age_days=0),
+        RetentionPolicy(max_versions_percent=30, min_age_days=0),
         now=now,
         usage=_usage(10_000, tmp_path),
     )
@@ -50,7 +53,7 @@ def test_respects_min_age(tmp_path: Path) -> None:
     young = _make(tmp_path, "job-a", now - timedelta(days=5), 3000)
     rep = retention.enforce(
         DestLayout(tmp_path),
-        RetentionPolicy(max_versions_percent=10, min_free_percent=0, min_age_days=30),
+        RetentionPolicy(max_versions_percent=10, min_age_days=30),
         now=now,
         usage=_usage(10_000, tmp_path),
     )
@@ -64,24 +67,75 @@ def test_prunes_across_jobs_by_age(tmp_path: Path) -> None:
     b = _make(tmp_path, "job-b", now - timedelta(days=90), 2000)
     retention.enforce(
         DestLayout(tmp_path),
-        RetentionPolicy(max_versions_percent=30, min_free_percent=0, min_age_days=0),
+        RetentionPolicy(max_versions_percent=30, min_age_days=0),
         now=now,
         usage=_usage(10_000, tmp_path),
     )
     assert not b.exists() and a.exists()
 
 
-def test_min_free_with_reserve(tmp_path: Path) -> None:
+def test_rotates_when_free_space_not_enough_for_copy(tmp_path: Path) -> None:
     now = datetime(2026, 11, 6)
     f = _make(tmp_path, "job-a", now - timedelta(days=50), 1000)
+    total = 10_000  # margine = 2% = 200 byte
+    # libero = total - usato (~8986); servono 8900 byte + margine: senza ruotare non ci stanno
     rep = retention.enforce(
         DestLayout(tmp_path),
-        RetentionPolicy(max_versions_percent=90, min_free_percent=50, min_age_days=0),
-        reserve_bytes=4500,
+        RetentionPolicy(max_versions_percent=90, min_age_days=0),
+        reserve_bytes=8_900,
         now=now,
-        usage=_usage(10_000, tmp_path),
+        usage=_usage(total, tmp_path, free_bonus=0),
     )
-    assert not f.exists() and rep.freed_bytes == 1000
+    assert not f.exists() and rep.freed_bytes == 1000 and rep.within_limits
+
+
+def test_free_space_is_not_kept_free_for_its_own_sake(tmp_path: Path) -> None:
+    """Opzione (b): niente più "mantieni il 10% libero"; si ruota solo se la copia non ci sta."""
+    now = datetime(2026, 11, 6)
+    f = _make(tmp_path, "job-a", now - timedelta(days=50), 1000)
+    total = 10_000  # disco con versioni al 10%, la copia (100 byte) ci sta abbondantemente
+    rep = retention.enforce(
+        DestLayout(tmp_path),
+        RetentionPolicy(max_versions_percent=90, min_age_days=0),
+        reserve_bytes=100,
+        now=now,
+        usage=_usage(total, tmp_path, free_bonus=0),
+    )
+    assert f.exists() and rep.deleted == []
+
+
+def test_quota_limits_backup_size(tmp_path: Path) -> None:
+    now = datetime(2026, 11, 6)
+    old = _make(tmp_path, "job-a", now - timedelta(days=90), 600_000)
+    new = _make(tmp_path, "job-a", now - timedelta(days=40), 600_000)
+    gb = 2**30
+    # quota di ~1.5 MB: le due versioni (1.2 MB) + 400 KB da scrivere la superano -> ruota la più vecchia
+    rep = retention.enforce(
+        DestLayout(tmp_path),
+        RetentionPolicy(max_backup_gb=1_500_000 / gb, max_versions_percent=95, min_age_days=0),
+        reserve_bytes=400_000,
+        now=now,
+        usage=_usage(10**12, tmp_path),  # disco enorme: conta solo la quota
+    )
+    assert not old.exists() and new.exists() and rep.within_limits
+
+
+def test_versions_percent_relative_to_quota(tmp_path: Path) -> None:
+    now = datetime(2026, 11, 6)
+    old = _make(tmp_path, "job-a", now - timedelta(days=90), 400_000)
+    rep = retention.enforce(
+        DestLayout(tmp_path),
+        RetentionPolicy(max_backup_gb=1_000_000 / 2**30, max_versions_percent=30, min_age_days=0),
+        now=now,
+        usage=_usage(10**12, tmp_path),
+    )
+    assert not old.exists() and rep.within_limits
+
+
+def test_measure(tmp_path: Path) -> None:
+    _make(tmp_path, "job-a", datetime(2026, 1, 1), 1000)
+    total, versions = retention.measure(DestLayout(tmp_path))
+    assert versions == 1000 and total == 1000 + len("mai cancellare")
 
 
 def test_nothing_to_do_within_limits(tmp_path: Path) -> None:
@@ -113,7 +167,12 @@ def test_symlinked_version_folder_never_followed(tmp_path: Path) -> None:
     (v / "2020-01-01T00-00-00").symlink_to(target, target_is_directory=True)
     retention.enforce(
         DestLayout(tmp_path),
-        RetentionPolicy(max_versions_percent=1, min_free_percent=0, min_age_days=0),
+        RetentionPolicy(max_versions_percent=1, min_age_days=0),
         usage=lambda p: (100, 100, 0),
     )
     assert (target / "importante.txt").exists()
+
+
+def test_space_margin_scales_with_disk() -> None:
+    assert retention.space_margin(50 * 2**20) == 1 * 2**20  # chiavetta da 50 MB: 1 MB
+    assert retention.space_margin(2 * 2**40) == retention.SPACE_MARGIN  # disco da 2 TB: 64 MB

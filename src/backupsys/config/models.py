@@ -16,8 +16,10 @@ def new_id() -> str:
 class RetentionPolicy(BaseModel):
     """Regole di rotazione delle vecchie versioni su un disco (D3)."""
 
+    #: Quota massima di spazio per backup-sys su questo disco, in GB (None = tutto il disco).
+    max_backup_gb: float | None = Field(None, gt=0)
+    #: Le versioni possono occupare al massimo questa % della capacità (quota, se impostata, o disco).
     max_versions_percent: float = Field(30.0, ge=1, le=95)
-    min_free_percent: float = Field(10.0, ge=0, le=90)
     min_age_days: int = Field(30, ge=0)
 
 

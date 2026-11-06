@@ -6,7 +6,8 @@
 {% if info %}
 <section class="card">
   <div class="row"><strong>Stato:</strong>
-    <span class="badge {{ 's-ok' if info.status.ready else ('s-failed' if info.status.available else 's-skipped') }}">{{ info.status.message }}</span></div>
+    <span class="badge {{ 's-ok' if info.status.ready else ('s-failed' if info.status.available else 's-skipped') }}">{{ 'Pronto' if info.status.ready else ('Problema' if info.status.available else 'Non collegato') }}</span></div>
+  <p class="{{ 'err-text' if info.status.available and not info.status.identity_ok else 'muted' }}">{{ info.status.message }}</p>
   {{ space(info) }}
   {% if info.status.available and not info.status.identity_ok %}
   <form method="post" action="/destinations/{{ dest.id }}/rebind" class="stack">
@@ -23,8 +24,10 @@
   <input type="hidden" name="csrf" value="{{ csrf }}">
   {% if not is_new %}<input type="hidden" name="id" value="{{ dest.id }}">{% endif %}
   <label>Nome <input name="name" value="{{ dest.name }}" placeholder="Disco USB blu" required></label>
-  <label>Percorso <small>lettera di unità (<code>E:\</code>), cartella (<code>E:\Backup</code>) o percorso di rete (<code>\\NAS\backup</code>)</small>
+  <label>Percorso <small>lettera di unità (<code>E:\</code>), cartella (<code>E:\Backup</code>, viene creata se non esiste) o percorso di rete (<code>\\NAS\backup</code>)</small>
     <input name="path" value="{{ dest.path }}" required></label>
+  <p class="muted">🛡 Per sicurezza il disco deve essere <strong>vuoto</strong>: formattalo (consigliato NTFS) prima di usarlo.
+     Un disco che contiene altri file non viene inizializzato. Per i percorsi di rete deve essere vuota la cartella indicata.</p>
   <fieldset>
     <legend>Rete (solo per percorsi <code>\\server\condivisione</code>)</legend>
     <div class="row wrap">
@@ -38,10 +41,12 @@
     <p class="muted">Quando un file cambia, la versione precedente viene conservata. Se lo spazio stringe, le versioni più vecchie vengono ruotate (cancellate) automaticamente.
       <strong>La copia corrente dei tuoi file non viene mai cancellata.</strong></p>
     <div class="row wrap">
-      <label>Le versioni possono occupare al massimo il <input type="number" name="max_versions_percent" min="1" max="95" value="{{ '%.0f' % dest.retention.max_versions_percent }}"> % del disco</label>
-      <label>Mantieni almeno il <input type="number" name="min_free_percent" min="0" max="90" value="{{ '%.0f' % dest.retention.min_free_percent }}"> % libero</label>
+      <label>Quota massima per backup-sys <input type="number" name="max_backup_gb" min="0.01" step="any" value="{{ '%g' % dest.retention.max_backup_gb if dest.retention.max_backup_gb else '' }}" placeholder="tutto"> GB</label>
+      <label>Le versioni possono occupare al massimo il <input type="number" name="max_versions_percent" min="1" max="95" value="{{ '%.0f' % dest.retention.max_versions_percent }}"> % della quota (o del disco)</label>
       <label>Non ruotare mai versioni più giovani di <input type="number" name="min_age_days" min="0" value="{{ dest.retention.min_age_days }}"> giorni</label>
     </div>
+    <small class="muted">Le versioni vengono ruotate quando superano il loro limite, quando backup-sys supererebbe la quota,
+      oppure quando lo spazio libero non basta per la copia in corso. Quota vuota = tutto il disco.</small>
   </fieldset>
   <div class="row"><button class="primary">Salva</button><a class="button" href="/destinations">Annulla</a></div>
 </form>

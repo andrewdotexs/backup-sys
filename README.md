@@ -40,11 +40,13 @@ uv run backup-sys daemon --open
 ---
 
 ## Primi passi
-1. **Dischi → Aggiungi disco**: un nome (es. "Disco USB blu") e il percorso (`E:\`, `E:\Backup` oppure `\\NAS\backup`).
+1. **Formatta il disco** (consigliato NTFS): per sicurezza backup-sys accetta solo dischi **vuoti**.
+2. **Dischi → Aggiungi disco**: un nome (es. "Disco USB blu") e il percorso (`E:\`, `E:\Backup` oppure `\\NAS\backup`).
+   Una sottocartella che non esiste ancora viene creata al primo backup.
    Per la rete puoi indicare utente e password: vengono salvati nel Gestore credenziali di Windows.
-2. **Backup → Nuovo backup**: scegli le cartelle da salvare (una per riga), i dischi e la frequenza:
+3. **Backup → Nuovo backup**: scegli le cartelle da salvare (una per riga), i dischi e la frequenza:
    ogni giorno, ogni settimana, ogni N ore o cron avanzato. Opzionalmente anche "quando collego un disco".
-3. Premi **Esegui ora** per il primo backup e segui l'avanzamento nella **Panoramica**.
+4. Premi **Esegui ora** per il primo backup e segui l'avanzamento nella **Panoramica**.
 
 ---
 
@@ -72,16 +74,19 @@ e copiare anche senza backup-sys.
 | Il disco non è collegato all'ora prevista | Il backup su quel disco parte appena lo ricolleghi |
 | Il PC era spento all'ora prevista | Il backup parte appena il PC si riaccende |
 | Al posto di E: c'è un altro disco | Il backup su quella destinazione non parte |
+| Il disco nuovo contiene altri file | Non viene inizializzato né toccato: va formattato prima |
 | Stacchi il disco a metà copia | Nessun file corrotto: si scrive su `*.bsys-partial` e si rinomina solo a copia finita |
 | Cambia di colpo una gran parte dei file (ransomware?) | Il backup va **in pausa** e chiede conferma |
 
 ### Rotazione delle versioni (l'unica cancellazione automatica)
 Per ogni disco, in **Dischi → Gestisci → Spazio e versioni**, imposti:
-- la quota massima di disco per le versioni (default 30%);
-- lo spazio libero minimo (default 10%);
+- una **quota** facoltativa: lo spazio massimo che backup-sys può occupare su quel disco (vuoto = tutto il disco);
+- la percentuale massima della quota (o del disco) per le versioni (default 30%);
 - l'età minima sotto cui una versione non viene mai ruotata (default 30 giorni).
 
-Quando un limite viene superato, il programma cancella le cartelle `versions\<data>` **più vecchie**,
+Le versioni vengono ruotate quando superano il loro limite, quando backup-sys supererebbe la quota,
+oppure quando lo spazio libero non basta per la copia in corso. In quel caso conta il margine di sicurezza:
+il 2% del disco, al massimo 64 MB. In quei casi il programma cancella le cartelle `versions\<data>` **più vecchie**,
 una alla volta, finché rientra. Non tocca mai `current\`, né le versioni più giovani dell'età minima.
 Se non basta, si ferma e ti avvisa. Ogni rotazione viene registrata nell'audit log.
 
@@ -145,6 +150,12 @@ uv run mypy                    # strict
 uv run mypy --platform win32   # type-check del codice specifico Windows
 ```
 Su Linux senza desktop, per avviare il daemon in sviluppo: `BACKUPSYS_KEYRING=memory BACKUPSYS_HOME=/tmp/bsys uv run backup-sys daemon --no-tray`.
+
+### Dischi di backup: regola del disco vuoto
+Un disco diventa disco di backup solo se è vuoto. Per i dischi locali si controlla l'intero volume,
+ignorando le cartelle di sistema di Windows (`System Volume Information`, `$RECYCLE.BIN`). Per i percorsi
+di rete si controlla la cartella indicata. Un disco già inizializzato (con `backup-sys\.bsys-volume.json`)
+viene sempre riconosciuto, anche se in seguito ci aggiungi altri file.
 
 ### Garanzie verificate dai test
 - `tests/unit/test_no_delete_policy.py` analizza il codice sorgente e fallisce se compare un'API di cancellazione

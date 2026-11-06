@@ -85,12 +85,13 @@ def test_full_flow(client: TestClient, svc: BackupService, tmp_path: Path) -> No
             "name": "USB",
             "path": str(disk),
             "max_versions_percent": "30",
-            "min_free_percent": "10",
+            "max_backup_gb": "500",
             "min_age_days": "30",
         },
     )
     assert r.status_code == 303 and "ok=" in r.headers["location"]
     dest = svc.config.destinations[0]
+    assert dest.retention.max_backup_gb == 500
 
     r = client.post(
         "/jobs/save",

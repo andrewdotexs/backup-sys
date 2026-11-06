@@ -15,9 +15,18 @@
 {% macro space(info) -%}
 {% if info.status.available and info.total %}
 <div class="space">
+  {% if info.quota %}
+  <meter min="0" max="100" low="80" high="90" optimum="10" value="{{ '%.1f' % info.backup_percent }}"></meter>
+  <small>backup-sys {{ info.backup_bytes | bytes }} su una quota di {{ info.quota | bytes }}
+    · versioni {{ info.versions_bytes | bytes }} (limite {{ '%.0f' % info.dest.retention.max_versions_percent }}%)</small>
+  <small class="muted">Disco: {{ info.total | bytes }} · liberi {{ info.free | bytes }}{% if info.other_bytes > 2**20 %} · altri file {{ info.other_bytes | bytes }}{% endif %}</small>
+  {% else %}
   <meter min="0" max="100" low="80" high="90" optimum="10" value="{{ '%.1f' % info.used_percent }}"></meter>
-  <small>{{ (info.total - info.free) | bytes }} usati su {{ info.total | bytes }} · liberi {{ info.free | bytes }}
-  · versioni {{ info.versions_bytes | bytes }} ({{ '%.0f' % info.versions_percent }}%, limite {{ '%.0f' % info.dest.retention.max_versions_percent }}%)</small>
+  <small>backup-sys {{ info.backup_bytes | bytes }}{% if info.other_bytes > 2**20 %} · altri file {{ info.other_bytes | bytes }}{% endif %}
+    · liberi {{ info.free | bytes }} su {{ info.total | bytes }}</small>
+  <small class="muted">versioni {{ info.versions_bytes | bytes }} ({{ '%.0f' % info.versions_percent }}%, limite {{ '%.0f' % info.dest.retention.max_versions_percent }}%)</small>
+  {% endif %}
+  {% if info.measured_at %}<small class="muted">occupazione misurata {{ info.measured_at | dt }}</small>{% endif %}
 </div>
 {% endif %}
 {%- endmacro %}

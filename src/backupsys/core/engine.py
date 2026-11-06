@@ -19,7 +19,7 @@ from backupsys.catalog import db
 from backupsys.catalog.db import Catalog
 from backupsys.config.models import Destination, Job
 from backupsys.core import retention
-from backupsys.core.fsutil import disk_usage, long_path
+from backupsys.core.fsutil import disk_usage, human_bytes, long_path
 from backupsys.core.layout import DestLayout, run_timestamp
 from backupsys.core.locks import DestinationLock, LockBusyError
 from backupsys.core.manifest import ManifestWriter
@@ -31,9 +31,6 @@ from backupsys.security import crypto, guard
 from backupsys.security.audit import AuditLog
 
 log = logging.getLogger(__name__)
-
-#: Margine di sicurezza sullo spazio libero oltre ai byte da copiare.
-SPACE_MARGIN = 64 * 1024 * 1024
 
 
 @dataclass
@@ -156,6 +153,12 @@ class BackupEngine:
                 self.catalog.record_errors(run_id, dest.id, dr.errors)
                 if dr.status in (db.OK, db.WARNING):
                     self.catalog.mark_success(job.id, dest.id)
+                if dr.status != db.SKIPPED and DestLayout(Path(dest.path)).root.is_dir():
+                    try:  # occupazione aggiornata per la panoramica (una sola lettura del disco)
+                        backup_b, versions_b = retention.measure(DestLayout(Path(dest.path)))
+                        self.catalog.record_usage(dest.id, backup_b, versions_b)
+                    except OSError:
+                        pass
             statuses = [d.status for d in result.dests]
             result.status = _overall(statuses)
             if result.status == db.OK and scanned.errors:
@@ -200,7 +203,11 @@ class BackupEngine:
             self.audit.log("dest_identity_mismatch", dest=dest.name, message=status.message)
             return dr
         if dest.volume_id is None:
-            vid = destinations.bind(dest)
+            try:
+                vid = destinations.bind(dest)
+            except (destinations.DiskNotEmptyError, OSError) as e:
+                dr.status, dr.message = db.FAILED, str(e)
+                return dr
             dest = dest.model_copy(update={"volume_id": vid})
             if self.on_bind:
                 self.on_bind(dest.id, vid)
@@ -267,11 +274,20 @@ class BackupEngine:
             ),
         )
         dr.pruned = report.deleted
-        _total, _used, free = disk_usage(dest.path)
-        if need + SPACE_MARGIN > free:
+        quota = int(dest.retention.max_backup_gb * 2**30) if dest.retention.max_backup_gb else None
+        if quota and report.backup_bytes_after + need > quota:
             dr.status = db.FAILED
             dr.message = (
-                f"Spazio insufficiente: servono {need // 2**20} MB, liberi {free // 2**20} MB. " + report.message
+                f"Quota del disco superata: backup-sys occupa {human_bytes(report.backup_bytes_after)}, "
+                f"servono altri {human_bytes(need)}, quota {human_bytes(quota)}. " + report.message
+            )
+            self.audit.log("dest_quota_exceeded", job=job.name, dest=dest.name, need=need, quota=quota)
+            return dr
+        total, _used, free = disk_usage(dest.path)
+        if need + retention.space_margin(total) > free:
+            dr.status = db.FAILED
+            dr.message = f"Spazio insufficiente: servono {human_bytes(need)}, liberi {human_bytes(free)}. " + (
+                report.message
             )
             self.audit.log("dest_full", job=job.name, dest=dest.name, need=need, free=free)
             return dr
@@ -317,5 +333,5 @@ class BackupEngine:
             if not report.within_limits:
                 dr.message = report.message
         if dr.pruned and not dr.message:
-            dr.message = f"Ruotate {len(dr.pruned)} cartelle di versioni ({report.freed_bytes // 2**20} MB)"
+            dr.message = f"Ruotate {len(dr.pruned)} cartelle di versioni ({human_bytes(report.freed_bytes)})"
         return dr

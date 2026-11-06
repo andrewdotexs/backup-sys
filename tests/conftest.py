@@ -18,6 +18,19 @@ from backupsys.security.audit import AuditLog
 def isolated_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Path]:
     home = tmp_path / "home"
     monkeypatch.setenv("BACKUPSYS_HOME", str(home))
+
+    # Ogni cartella di primo livello in tmp_path fa da "volume" (un disco a sé), così il controllo
+    # "disco vuoto" non guarda l'intero file system del computer che esegue i test.
+    from backupsys.destinations import base as dest_base
+
+    def fake_volume_root(path: str) -> Path:
+        p = Path(os.path.abspath(path))
+        for anc in [p, *p.parents]:
+            if anc.parent == tmp_path:
+                return anc
+        return p
+
+    monkeypatch.setattr(dest_base, "volume_root", fake_volume_root)
     secrets.use_memory_backend()
     # parametri Argon2 leggeri nei test
     monkeypatch.setattr(crypto, "ARGON2_PARAMS", {"time_cost": 1, "memory_cost": 1024, "parallelism": 1})
