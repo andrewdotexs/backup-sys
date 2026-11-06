@@ -21,7 +21,6 @@ from backupsys.config.models import DEFAULT_EXCLUDES, Destination, Job
 from backupsys.core import restore as restore_mod
 from backupsys.core.fsutil import human_bytes, is_link_or_junction, real_folder
 from backupsys.core.layout import CURRENT
-from backupsys.core.scanner import is_absolute_exclude, norm_abs
 from backupsys.known_folders import known_folders
 from backupsys.scheduler import autostart
 from backupsys.scheduler.loop import Scheduler
@@ -29,6 +28,7 @@ from backupsys.scheduler.timing import describe
 from backupsys.security import crypto
 from backupsys.security.auth import AuthStore, LoginThrottle, Session, SessionManager
 from backupsys.service import BackupService
+from backupsys.ui.errors_view import group_errors
 from backupsys.ui.forms import dest_from_form, job_from_form, schedule_to_form
 
 HERE = Path(__file__).parent
@@ -462,17 +462,13 @@ def create_app(
         run = service.catalog.run(run_id)
         if run is None:
             return back("/runs", err="Esecuzione inesistente")
-        excluded: set[str] = set()
-        job_exists = True
+        job: Job | None
         try:
             job = service.config.job(run.job_id)
-            excluded = {norm_abs(e) for e in job.excludes if is_absolute_exclude(e)}
         except KeyError:
-            job_exists = False
+            job = None
         errors = service.catalog.run_errors(run_id)
-        for e in errors:
-            e["excludable"] = job_exists and is_absolute_exclude(e["path"])
-            e["excluded"] = e["excludable"] and norm_abs(e["path"]) in excluded
+        groups, loose = group_errors(errors, job)
         return render(
             request,
             "runs_detail.html",
@@ -480,6 +476,8 @@ def create_app(
             run=run,
             dests=service.catalog.run_dests(run_id),
             errors=errors,
+            groups=groups,
+            loose=loose,
         )
 
     @app.post("/runs/{run_id}/exclude")

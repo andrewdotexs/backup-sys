@@ -79,3 +79,6 @@ progress, meter { width: 100%; height: 10px; }
 .restore-box { margin-bottom: 12px; }
 @media (max-width: 700px) { dl.kv { grid-template-columns: 1fr; } .ellipsis { max-width: 160px; } th:nth-child(n+5), td:nth-child(n+5) { display: none; } }
 .chips { gap: 6px; margin-top: -4px; }
+.errgroup { border-top: 1px solid var(--border); padding: 10px 0; }
+.errgroup select { max-width: 520px; }
+.errgroup details table { margin-top: 4px; }
