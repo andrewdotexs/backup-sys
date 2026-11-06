@@ -59,12 +59,15 @@ class Env:
         self.config.jobs.append(self.job)
         self.catalog = Catalog()
         self.audit = AuditLog()
-        self.engine = BackupEngine(self.catalog, self.audit, on_bind=self._bind)
+        self.engine = BackupEngine(self.catalog, self.audit, on_bind=self._bind, on_relocate=self._relocate)
         self._mtime = int(time.time()) - 100_000
 
     def _bind(self, dest_id: str, vid: str) -> None:
         d = self.config.destination(dest_id)
         d.volume_id = vid
+
+    def _relocate(self, dest_id: str, path: str) -> None:
+        self.config.destination(dest_id).path = path
 
     def write(self, rel: str, content: bytes | str) -> Path:
         p = self.src / rel

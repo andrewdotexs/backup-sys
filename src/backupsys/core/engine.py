@@ -103,10 +103,17 @@ def _overall(statuses: list[str]) -> str:
 
 
 class BackupEngine:
-    def __init__(self, catalog: Catalog, audit: AuditLog, on_bind: BindCb | None = None) -> None:
+    def __init__(
+        self,
+        catalog: Catalog,
+        audit: AuditLog,
+        on_bind: BindCb | None = None,
+        on_relocate: BindCb | None = None,
+    ) -> None:
         self.catalog = catalog
         self.audit = audit
         self.on_bind = on_bind
+        self.on_relocate = on_relocate  # (dest_id, nuovo percorso): il disco ha cambiato lettera
 
     def run(
         self,
@@ -221,6 +228,11 @@ class BackupEngine:
     ) -> DestResult:
         dr = DestResult(dest.id, dest.name, db.RUNNING)
         status = destinations.check(dest)
+        if status.relocated_to:
+            self.audit.log("dest_relocated", dest=dest.name, old=dest.path, new=status.relocated_to)
+            dest = dest.model_copy(update={"path": status.relocated_to})
+            if self.on_relocate:
+                self.on_relocate(dest.id, status.relocated_to)
         if not status.available:
             dr.status, dr.message = db.SKIPPED, status.message
             return dr

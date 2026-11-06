@@ -105,7 +105,8 @@ e copiare anche senza backup-sys.
 | Cancelli un file dal backup | Viene ricopiato al giro successivo (se è ancora sul PC) |
 | Il disco non è collegato all'ora prevista | Il backup su quel disco parte appena lo ricolleghi |
 | Il PC era spento all'ora prevista | Il backup parte appena il PC si riaccende |
-| Al posto di E: c'è un altro disco | Il backup su quella destinazione non parte |
+| Il disco di backup riceve un'altra lettera (E: → G:) | Viene cercato sulle altre unità (dischi fissi e rimovibili) tramite il suo identificativo, nello stesso percorso relativo; la nuova lettera viene salvata in configurazione |
+| Al posto di E: c'è un altro disco | Su quel disco non viene scritto nulla: il backup va sul disco giusto se è collegato con un'altra lettera, altrimenti non parte |
 | Il disco nuovo contiene altri file | Non viene inizializzato né toccato: va formattato prima |
 | Stacchi il disco a metà copia | Nessun file corrotto: si scrive su `*.bsys-partial` e si rinomina solo a copia finita |
 | Cambia di colpo una gran parte dei file (ransomware?) | Il backup va **in pausa** e chiede conferma |

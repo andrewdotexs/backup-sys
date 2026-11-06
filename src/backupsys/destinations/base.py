@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -30,6 +31,8 @@ class DestStatus:
     identity_ok: bool
     message: str
     volume_id: str | None = None
+    #: percorso dove il disco è stato ritrovato, se diverso da quello configurato (cambio di lettera)
+    relocated_to: str | None = None
 
     @property
     def ready(self) -> bool:
@@ -136,7 +139,26 @@ def is_reachable(dest: Destination) -> bool:
 
 
 def check(dest: Destination) -> DestStatus:
-    """Stato della destinazione senza modificare nulla."""
+    """Stato della destinazione senza modificare nulla.
+
+    Un disco locale già associato che non si trova alla sua lettera (o al cui posto c'è un altro disco)
+    viene cercato sulle altre unità tramite il suo identificativo: ``relocated_to`` indica dove.
+    """
+    status = _check_at(dest)
+    if status.ready or dest.kind != "local" or dest.volume_id is None:
+        return status
+    found = locate(dest)
+    if found is None:
+        return status
+    moved = _check_at(dest.model_copy(update={"path": found}))
+    if not moved.ready:
+        return status
+    return DestStatus(
+        True, True, f"Ritrovato su {found} (configurato su {dest.path})", dest.volume_id, relocated_to=found
+    )
+
+
+def _check_at(dest: Destination) -> DestStatus:
     try:
         reachable = is_reachable(dest)
     except OSError as e:
@@ -160,6 +182,55 @@ def check(dest: Destination) -> DestStatus:
     if marker["volume_id"] != dest.volume_id:
         return DestStatus(True, False, "Disco diverso da quello associato a questa destinazione")
     return DestStatus(True, True, "Pronto", dest.volume_id)
+
+
+DRIVE_REMOVABLE, DRIVE_FIXED, DRIVE_RAMDISK = 2, 3, 6
+
+
+def candidate_volumes() -> list[Path]:
+    """Unità in cui cercare un disco che ha cambiato lettera.
+
+    Windows: dischi fissi e rimovibili (non lettori ottici né unità di rete: eviterebbero attese e
+    finestre «Inserire un disco»). Altri sistemi: nessuna (la funzione è sostituibile nei test).
+    """
+    if sys.platform != "win32":
+        return []
+    import ctypes  # pragma: no cover - solo Windows
+
+    k32 = ctypes.windll.kernel32
+    k32.SetErrorMode(0x8001)  # SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX: niente finestre di errore
+    mask = k32.GetLogicalDrives()
+    out = []
+    for i in range(26):
+        if mask & (1 << i):
+            root = f"{chr(65 + i)}:\\"
+            if k32.GetDriveTypeW(root) in (DRIVE_REMOVABLE, DRIVE_FIXED, DRIVE_RAMDISK):
+                out.append(Path(root))
+    return out
+
+
+def locate(dest: Destination) -> str | None:
+    """Cerca il disco associato a ``dest`` (stesso identificativo) sulle altre unità, nello stesso percorso
+    relativo: ``F:\\Backup\\PC`` -> ``G:\\Backup\\PC``."""
+    if dest.volume_id is None:
+        return None
+    target = Path(os.path.abspath(dest.path))
+    root = volume_root(dest.path)
+    try:
+        rel = target.relative_to(root)
+    except ValueError:
+        return None
+    for vol in candidate_volumes():
+        cand = vol / rel
+        if os.path.normcase(str(cand)) == os.path.normcase(str(target)):
+            continue
+        try:
+            marker = read_marker(DestLayout(cand))
+        except OSError:
+            continue
+        if marker and marker.get("volume_id") == dest.volume_id:
+            return str(cand)
+    return None
 
 
 def bind(dest: Destination) -> str:

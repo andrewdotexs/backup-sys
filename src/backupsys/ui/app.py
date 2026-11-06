@@ -484,8 +484,9 @@ def create_app(
                 job, dest = cfg.job(job_id), cfg.destination(dest_id)
             except KeyError:
                 return back("/browse", err="Selezione non valida")
-            layout = restore_mod.job_layout(dest, job)
             info = service.dest_info(dest, 5)
+            dest = info.dest  # percorso aggiornato se il disco ha cambiato lettera
+            layout = restore_mod.job_layout(dest, job)
             ctx.update(job=job, dest=dest, info=info, area=area, rel=rel)
             if info.status.ready and layout.current.is_dir():
                 try:
@@ -509,6 +510,7 @@ def create_app(
         except KeyError:
             return back("/browse", err="Selezione non valida")
         rel = qp.get("path", "")
+        dest = service.resolved(dest.id)
         layout = restore_mod.job_layout(dest, job)
         try:
             history = restore_mod.file_history(layout, rel)

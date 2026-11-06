@@ -116,7 +116,7 @@ class BackupService:
         self.audit = audit or AuditLog()
         self._cfg_lock = threading.RLock()
         self._config = self.store.load()
-        self.engine = BackupEngine(self.catalog, self.audit, on_bind=self._on_bind)
+        self.engine = BackupEngine(self.catalog, self.audit, on_bind=self._on_bind, on_relocate=self._on_relocate)
         self._queue: list[Task] = []
         self._qcond = threading.Condition()
         self.running: Running | None = None
@@ -146,6 +146,23 @@ class BackupService:
             c.destination(dest_id).volume_id = volume_id
 
         self.mutate(fn, "config_dest_bound", actor="system", dest_id=dest_id)
+
+    def _on_relocate(self, dest_id: str, new_path: str) -> None:
+        old = self.config.destination(dest_id).path
+
+        def fn(c: AppConfig) -> None:
+            c.destination(dest_id).path = new_path
+
+        self.mutate(fn, "config_dest_relocated", actor="system", dest_id=dest_id, old=old, new=new_path)
+
+    def resolve(self, dest: Destination) -> tuple[Destination, destinations.DestStatus]:
+        """Stato della destinazione; se il disco ha cambiato lettera aggiorna la configurazione."""
+        status = destinations.check(dest)
+        if status.relocated_to and status.relocated_to != dest.path:
+            self.audit.log("dest_relocated", dest=dest.name, old=dest.path, new=status.relocated_to)
+            self._on_relocate(dest.id, status.relocated_to)
+            dest = dest.model_copy(update={"path": status.relocated_to})
+        return dest, status
 
     def save_job(self, job: Job) -> None:
         def fn(c: AppConfig) -> None:
@@ -194,8 +211,7 @@ class BackupService:
     # ------------------------------------------------------------------ cifratura
     def setup_encryption(self, dest_id: str, passphrase: str) -> str:
         """Crea la chiave sul disco e la salva nel Credential Manager. Restituisce il codice di recupero."""
-        dest = self.config.destination(dest_id)
-        status = destinations.check(dest)
+        dest, status = self.resolve(self.config.destination(dest_id))
         if not status.ready:
             raise ValueError(status.message)
         if dest.volume_id is None:  # inizializza il disco (vuoto) prima di metterci la chiave
@@ -219,7 +235,7 @@ class BackupService:
         return crypto.recovery_code(key)
 
     def unlock_destination(self, dest_id: str, passphrase: str) -> None:
-        dest = self.config.destination(dest_id)
+        dest, _status = self.resolve(self.config.destination(dest_id))
         keyfile = DestLayout(Path(dest.path)).root / crypto.KEYFILE_NAME
         key = crypto.unlock_keyfile(keyfile, passphrase)
         secrets.set_dest_key(dest_id, key)
@@ -234,7 +250,7 @@ class BackupService:
         cached = self._dest_cache.get(dest.id)
         if cached and time.time() - cached[0] < max_age and cached[1].dest == dest:
             return cached[1]
-        status = destinations.check(dest)
+        dest, status = self.resolve(dest)
         info = DestInfo(dest, status)
         if status.available and os.path.isdir(dest.path):
             with contextlib.suppress(OSError):
@@ -244,6 +260,10 @@ class BackupService:
             info.backup_bytes, info.versions_bytes, info.measured_at = usage
         self._dest_cache[dest.id] = (time.time(), info)
         return info
+
+    def resolved(self, dest_id: str) -> Destination:
+        """La destinazione con il percorso aggiornato (se il disco ha cambiato lettera)."""
+        return self.resolve(self.config.destination(dest_id))[0]
 
     # ------------------------------------------------------------------ coda
     def enqueue(self, task: Task) -> bool:
@@ -370,7 +390,7 @@ class BackupService:
         dest = cfg.destination(task.dest_id)
         running.label = f"Verifica su {dest.name}"
         vid = self.catalog.start_verify(job.id, dest.id, job.name, dest.name)
-        status = destinations.check(dest)
+        dest, status = self.resolve(dest)
         if not status.ready:
             self.catalog.finish_verify(vid, db.SKIPPED, 0, [], [], 0, status.message)
             return None
@@ -401,8 +421,8 @@ class BackupService:
         self, job_id: str, dest_id: str, area: str, rel: str, target_dir: str | None
     ) -> restore_mod.RestoreReport:
         cfg = self.config
-        job, dest = cfg.job(job_id), cfg.destination(dest_id)
-        status = destinations.check(dest)
+        job = cfg.job(job_id)
+        dest, status = self.resolve(cfg.destination(dest_id))
         if not status.ready:
             raise FileNotFoundError(status.message)
         cipher = destinations.load_cipher(dest) if dest.encrypted else None
