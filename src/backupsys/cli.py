@@ -72,7 +72,8 @@ def run(
         raise typer.Exit(1)
     for d in res.dests:
         typer.echo(
-            f"  {d.name}: {d.status} — nuovi {d.copied}, versioni {d.versioned}, invariati {d.skipped}, "
+            f"  {d.name}: {d.status} — nuovi {d.copied}, versioni {d.versioned}, rinominati {d.linked}, "
+            f"invariati {d.skipped}, "
             f"errori {len(d.errors)} {d.message}"
         )
     typer.echo(f"Esito: {res.status}")

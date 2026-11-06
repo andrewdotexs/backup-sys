@@ -511,12 +511,20 @@ def create_app(
         rel = qp.get("path", "")
         layout = restore_mod.job_layout(dest, job)
         try:
-            versions = restore_mod.file_versions(layout, rel)
+            history = restore_mod.file_history(layout, rel)
         except ValueError as e:
             return back("/browse", err=str(e))
         original = restore_mod.original_location(job, rel)
         return render(
-            request, "browse_versions.html", s, job=job, dest=dest, rel=rel, versions=versions, original=original
+            request,
+            "browse_versions.html",
+            s,
+            job=job,
+            dest=dest,
+            rel=rel,
+            versions=history.versions,
+            renamed_to=history.renamed_to,
+            original=original,
         )
 
     @app.post("/restore")

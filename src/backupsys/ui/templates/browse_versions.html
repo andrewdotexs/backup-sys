@@ -4,9 +4,11 @@
 <h1>Versioni di <code>{{ rel.split('/')[-1].removesuffix('.bsenc') }}</code></h1>
 <p class="muted">{{ original or rel }}</p>
 <p><a href="/browse?job={{ job.id }}&dest={{ dest.id }}&path={{ '/'.join(rel.split('/')[:-1]) | q }}">← torna alla cartella</a></p>
+{% if renamed_to %}<p class="flash ok">Questo file è stato poi rinominato o spostato sul PC in: {% for n in renamed_to %}<strong>{{ n }}</strong>{{ ', ' if not loop.last }}{% endfor %}.</p>{% endif %}
 {% for v in versions %}
 <section class="card">
-  <div class="row"><strong>{{ v.label }}</strong><span class="muted">{{ v.size | bytes }} · modificato {{ v.mtime | dt }}</span></div>
+  <div class="row"><strong>{{ v.label }}</strong><span class="muted">{{ v.size | bytes }} · modificato {{ v.mtime | dt }}</span>
+    {% if v.former_name %}<span class="badge">prima si chiamava «{{ v.former_name }}»</span>{% endif %}</div>
   <details>
     <summary>Ripristina questa versione</summary>
     {% set restore_area = v.area %}{% set restore_path = v.rel %}{% include "_restore_form.html" %}

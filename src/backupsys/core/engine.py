@@ -23,7 +23,8 @@ from backupsys.core.fsutil import disk_usage, human_bytes, long_path
 from backupsys.core.layout import DestLayout, run_timestamp
 from backupsys.core.locks import DestinationLock, LockBusyError
 from backupsys.core.manifest import ManifestWriter
-from backupsys.core.planner import Action, build_plan
+from backupsys.core.planner import Action, PlannedItem, build_plan
+from backupsys.core.renames import RenameMatch, find_renames
 from backupsys.core.safe_writer import SafeWriter, SourceChangedError
 from backupsys.core.scanner import ScanResult, scan
 from backupsys.destinations import base as destinations
@@ -63,6 +64,7 @@ class DestResult:
     copied: int = 0
     versioned: int = 0
     skipped: int = 0
+    linked: int = 0  # rinominati/spostati sul PC: collegati al file già presente, senza ricopiarli
     bytes: int = 0
     errors: list[tuple[str, str]] = field(default_factory=list)
     pruned: list[tuple[str, int]] = field(default_factory=list)
@@ -151,6 +153,7 @@ class BackupEngine:
                     status=dr.status,
                     copied=dr.copied,
                     versioned=dr.versioned,
+                    linked=dr.linked,
                     skipped=dr.skipped,
                     bytes=dr.bytes,
                     errors=len(dr.errors),
@@ -192,6 +195,17 @@ class BackupEngine:
             prog.phase = "done"
             emit(prog)
         return result
+
+    @staticmethod
+    def _try_link(writer: SafeWriter, item: PlannedItem, match: RenameMatch) -> bool:
+        """Collega un file rinominato; False se il file system non lo permette (si copierà normalmente)."""
+        try:
+            writer.link(item, match.existing, match.sha256)
+            return True
+        except FileExistsError:
+            raise
+        except OSError:
+            return False
 
     # ------------------------------------------------------------------ singola destinazione
     def _run_dest(
@@ -273,7 +287,14 @@ class BackupEngine:
             self.audit.log("guard_overridden", actor="user", job=job.name, dest=dest.name, reason=verdict.reason)
 
         todo = plan.to_transfer
-        need = sum(crypto.encrypted_size(i.src.size) if dest.encrypted else i.src.size for i in todo)
+        # file rinominati/spostati sul PC: verranno collegati (hard link) al file già sul backup
+        prog.phase = "plan"
+        renames = find_renames(plan, jlayout, dest.encrypted, cipher)
+        need = sum(
+            crypto.encrypted_size(i.src.size) if dest.encrypted else i.src.size
+            for i in todo
+            if i.dest_path not in renames
+        )
 
         # 2) rotazione versioni secondo la policy del disco, tenendo conto di ciò che va scritto
         report = retention.enforce(
@@ -316,12 +337,16 @@ class BackupEngine:
                     break
                 prog.current = item.src.backup_rel
                 try:
-                    writer.store(item)
-                    if item.action is Action.COPY:
-                        dr.copied += 1
+                    match = renames.get(item.dest_path)
+                    if match is not None and self._try_link(writer, item, match):
+                        dr.linked += 1
                     else:
-                        dr.versioned += 1
-                    dr.bytes += item.src.size
+                        writer.store(item)
+                        if item.action is Action.COPY:
+                            dr.copied += 1
+                        else:
+                            dr.versioned += 1
+                        dr.bytes += item.src.size
                 except SourceChangedError:
                     dr.errors.append((item.src.abs_path, "Modificato durante la copia: verrà ripreso"))
                 except OSError as e:
@@ -344,6 +369,8 @@ class BackupEngine:
             dr.status = db.WARNING if dr.errors else db.OK
             if not report.within_limits:
                 dr.message = report.message
+        if dr.linked and not dr.message:
+            dr.message = f"{dr.linked} file rinominati o spostati riconosciuti: collegati senza ricopiarli"
         if dr.pruned and not dr.message:
             dr.message = f"Ruotate {len(dr.pruned)} cartelle di versioni ({human_bytes(report.freed_bytes)})"
         return dr

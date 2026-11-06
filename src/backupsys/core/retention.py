@@ -39,7 +39,33 @@ class RetentionReport:
         return sum(b for _, b in self.deleted)
 
 
-def tree_size(path: Path) -> int:
+#: Sopra questa dimensione i file vengono identificati (volume + indice) per non contare due volte
+#: gli hard link creati dal riconoscimento delle rinomine. Sotto, il doppio conteggio è trascurabile e
+#: su Windows evitiamo una chiamata di sistema in più per ogni file.
+LINK_CHECK_MIN = 1024 * 1024
+
+
+def _file_identity(e: os.DirEntry[str], st: os.stat_result) -> tuple[int, int] | None:
+    ino, dev = st.st_ino, st.st_dev
+    if not ino:  # Windows: DirEntry.stat() non fornisce l'indice del file
+        try:
+            full = os.stat(e.path, follow_symlinks=False)
+        except OSError:
+            return None
+        ino, dev = full.st_ino, full.st_dev
+        if full.st_nlink <= 1:
+            return None
+    elif st.st_nlink <= 1:
+        return None
+    return (dev, ino)
+
+
+def tree_size(path: Path, seen: set[tuple[int, int]] | None = None) -> int:
+    """Byte occupati da ``path``; gli hard link (file grandi) sono contati una volta sola.
+
+    ``seen`` condiviso tra più chiamate evita il doppio conteggio anche tra cartelle diverse.
+    """
+    seen = set() if seen is None else seen
     total = 0
     stack = [long_path(path)]
     while stack:
@@ -50,8 +76,15 @@ def tree_size(path: Path) -> int:
                     try:
                         if e.is_dir(follow_symlinks=False):
                             stack.append(e.path)
-                        else:
-                            total += e.stat(follow_symlinks=False).st_size
+                            continue
+                        st = e.stat(follow_symlinks=False)
+                        if st.st_size >= LINK_CHECK_MIN:
+                            ident = _file_identity(e, st)
+                            if ident is not None:
+                                if ident in seen:
+                                    continue
+                                seen.add(ident)
+                        total += st.st_size
                     except OSError:
                         pass
         except OSError:

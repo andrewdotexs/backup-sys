@@ -69,6 +69,17 @@ class AppendOnlyMachine(RuleBasedStateMachine):
         elif p.exists():
             p.unlink()
 
+    @rule(old=NAMES, new=NAMES)
+    def rename_on_pc(self, old: str, new: str) -> None:
+        """Rinomina/spostamento (la data di modifica resta): il backup lo collegherà senza ricopiarlo."""
+        src, dst = self._src(old), self._src(new)
+        if not src.is_file() or dst.exists() or src == dst:
+            return
+        if any((self.env.src / p).is_file() for p in Path(new).parents if str(p) != "."):
+            return  # un antenato del nuovo nome è un file
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        os.rename(src, dst)
+
     @rule(name=NAMES)
     def user_deletes_on_backup(self, name: str) -> None:
         p = self.env.current() / name

@@ -37,6 +37,17 @@ uv sync
 uv run backup-sys daemon --open
 ```
 
+### Aggiornamento
+1. Chiudi backup-sys dall'icona nella tray: **Esci**.
+2. Sostituisci il contenuto della cartella del programma con quello della nuova versione: elimina i vecchi
+   `backup-sys*.exe` e `_internal`, poi estrai lì il nuovo zip. Usa la **stessa cartella**, così l'avvio
+   automatico continua a funzionare.
+3. Avvia `backup-sys.exe`.
+
+Configurazione, password, storico e credenziali restano: sono in `%APPDATA%`, `%LOCALAPPDATA%` e nel
+Gestore credenziali, non nella cartella del programma. Il catalogo viene aggiornato da solo al primo avvio.
+**Non usare il disinstallatore per aggiornare**: cancellerebbe anche configurazione e storico.
+
 ### Disinstallazione
 Avvia **`backup-sys-uninstall.exe`** dalla cartella del programma (oppure `backup-sys uninstall` da sorgente).
 Prima di chiedere conferma mostra cosa rimuoverà; poi bisogna scrivere `RIMUOVI`.
@@ -90,6 +101,7 @@ e copiare anche senza backup-sys.
 | Crei un file sul PC | Viene copiato |
 | Modifichi un file | La nuova versione va in `current\`, la vecchia in `versions\<data>\` |
 | Cancelli un file dal PC | Resta sul backup |
+| Rinomini o sposti un file sul PC | Viene riconosciuto dal contenuto (stessa dimensione, data e impronta SHA-256): il nuovo nome viene **collegato** al dato già sul backup (hard link NTFS, nessuna copia e nessuno spazio in più). Il vecchio nome resta e la pagina "Versioni" del nuovo nome mostra anche la storia del vecchio. Su exFAT/FAT32 il file viene copiato normalmente |
 | Cancelli un file dal backup | Viene ricopiato al giro successivo (se è ancora sul PC) |
 | Il disco non è collegato all'ora prevista | Il backup su quel disco parte appena lo ricolleghi |
 | Il PC era spento all'ora prevista | Il backup parte appena il PC si riaccende |
@@ -183,6 +195,11 @@ viene sempre riconosciuto, anche se in seguito ci aggiungi altri file.
   o sovrascrittura fuori dalle eccezioni motivate (solo `core/retention.py` può cancellare, e solo in `versions/`).
 - `tests/property/test_append_only.py` genera migliaia di sequenze casuali di eventi (scritture, cancellazioni sul PC
   e sul backup, conflitti file/cartella) e verifica che nessun contenuto salvato vada mai perso.
+
+### Rinomine e spostamenti
+Il riconoscimento confronta i file "nuovi" con quelli presenti sul backup ma non più sul PC: richiede una lettura
+dell'elenco dei file del backup (solo quando ci sono file nuovi) e dell'intero file sul PC, che però non viene
+riscritto sul disco di backup. Nel conteggio dello spazio i dati collegati valgono una volta sola (per i file da 1 MB in su).
 
 ### Limiti noti
 - I file aperti in modo esclusivo (es. `.pst` di Outlook aperto) vengono saltati e ritentati al giro dopo.

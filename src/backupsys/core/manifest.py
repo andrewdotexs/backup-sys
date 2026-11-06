@@ -36,6 +36,10 @@ class ManifestWriter:
     def archived(self, rel_from: str, rel_to: str) -> None:
         self._write({"op": "archive", "from": rel_from, "to": rel_to})
 
+    def renamed(self, rel_from: str, rel_to: str) -> None:
+        """``rel_to`` è lo stesso file di ``rel_from`` rinominato/spostato sul PC (collegati con hard link)."""
+        self._write({"op": "rename", "from": rel_from, "to": rel_to})
+
     def close(self) -> None:
         if self._f is not None:
             self._f.flush()
@@ -73,3 +77,20 @@ def load_expected(manifests_dir: Path) -> dict[str, Expected]:
                     for k in [k for k in state if k == src or k.startswith(prefix)]:
                         state[dst + k[len(src) :]] = state.pop(k)
     return state
+
+
+def load_renames(manifests_dir: Path) -> dict[str, str]:
+    """Rinomine riconosciute: percorso nuovo (``current/...``) -> percorso precedente (``current/...``)."""
+    out: dict[str, str] = {}
+    if not manifests_dir.is_dir():
+        return out
+    for mf in sorted(manifests_dir.glob("*.jsonl")):
+        with open(long_path(mf), encoding="utf-8") as f:
+            for line in f:
+                try:
+                    rec = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if rec.get("op") == "rename":
+                    out[rec["to"]] = rec["from"]
+    return out

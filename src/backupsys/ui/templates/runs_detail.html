@@ -15,10 +15,10 @@
 <section class="card">
   <h2>Per disco</h2>
   <table>
-    <thead><tr><th>Disco</th><th>Esito</th><th>Nuovi</th><th>Nuove versioni</th><th>Invariati</th><th>Dati copiati</th><th>Versioni ruotate</th><th>Errori</th><th>Note</th></tr></thead>
+    <thead><tr><th>Disco</th><th>Esito</th><th>Nuovi</th><th>Nuove versioni</th><th>Rinominati</th><th>Invariati</th><th>Dati copiati</th><th>Versioni ruotate</th><th>Errori</th><th>Note</th></tr></thead>
     <tbody>
     {% for d in dests %}
-      <tr><td>{{ d.dest_name }}</td><td>{{ badge(d.status) }}</td><td>{{ d.copied }}</td><td>{{ d.versioned }}</td>
+      <tr><td>{{ d.dest_name }}</td><td>{{ badge(d.status) }}</td><td>{{ d.copied }}</td><td>{{ d.versioned }}</td><td>{{ d.linked or 0 }}</td>
           <td>{{ d.skipped }}</td><td>{{ d.bytes | bytes }}</td>
           <td>{{ d.pruned_versions }}{% if d.pruned_versions %} ({{ d.pruned_bytes | bytes }}){% endif %}</td>
           <td>{{ d.errors }}</td><td>{{ d.message }}</td></tr>

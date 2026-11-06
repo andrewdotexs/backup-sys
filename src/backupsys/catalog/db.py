@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS run_dests (
     copied INTEGER DEFAULT 0,
     versioned INTEGER DEFAULT 0,
     skipped INTEGER DEFAULT 0,
+    linked INTEGER DEFAULT 0,
     bytes INTEGER DEFAULT 0,
     errors INTEGER DEFAULT 0,
     pruned_versions INTEGER DEFAULT 0,
@@ -118,12 +119,20 @@ class Catalog:
         self._lock = threading.RLock()
         with self._conn() as c:
             c.executescript(SCHEMA)
+            self._migrate(c)
             # un'esecuzione rimasta "running" dopo un crash/spegnimento viene marcata come interrotta
             c.execute(
                 "UPDATE runs SET status=?, message='Interrotta (programma chiuso o PC spento)' WHERE status=?",
                 (CANCELLED, RUNNING),
             )
             c.execute("UPDATE verifies SET status=?, message='Interrotta' WHERE status=?", (CANCELLED, RUNNING))
+
+    @staticmethod
+    def _migrate(c: sqlite3.Connection) -> None:
+        """Aggiorna i cataloghi creati da versioni precedenti (colonne aggiunte dopo)."""
+        cols = {r["name"] for r in c.execute("PRAGMA table_info(run_dests)")}
+        if "linked" not in cols:
+            c.execute("ALTER TABLE run_dests ADD COLUMN linked INTEGER DEFAULT 0")
 
     @contextmanager
     def _conn(self) -> Iterator[sqlite3.Connection]:

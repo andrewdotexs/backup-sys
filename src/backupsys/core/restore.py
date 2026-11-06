@@ -14,6 +14,7 @@ from pathlib import Path, PurePosixPath
 from backupsys.config.models import Destination, Job
 from backupsys.core.fsutil import is_relative_to, long_path, source_key
 from backupsys.core.layout import CURRENT, VERSIONS, DestLayout, JobLayout
+from backupsys.core.manifest import load_renames
 from backupsys.security import crypto
 
 BUF = 1024 * 1024
@@ -35,6 +36,13 @@ class FileVersion:
     rel: str
     size: int
     mtime: datetime
+    former_name: str | None = None  # valorizzato se la versione è di un nome precedente (rinomina)
+
+
+@dataclass
+class FileHistory:
+    versions: list[FileVersion]
+    renamed_to: list[str]  # nomi successivi (se questo file è stato rinominato/spostato sul PC)
 
 
 @dataclass
@@ -96,20 +104,52 @@ def browse(layout: JobLayout, area: str, rel: str = "") -> list[Entry]:
     return out
 
 
-def file_versions(layout: JobLayout, rel: str) -> list[FileVersion]:
-    """Tutte le copie disponibili di un file (``rel`` relativo a current/ o a una versione)."""
+def _versions_of(layout: JobLayout, rel: str, former: str | None) -> list[FileVersion]:
     out: list[FileVersion] = []
     for area in areas(layout):
         p = _safe_join(area_root(layout, area), rel)
         if p.is_file():
             st = p.stat()
             if area == CURRENT:
-                label = "Copia corrente"
+                label = "Copia corrente" if former is None else "Copia con il nome precedente"
             else:
                 d, t = area.split("/")[1].split("T")
                 label = f"Versione del {d} {t.replace('-', ':')[:8]}"
-            out.append(FileVersion(area, label, rel, st.st_size, datetime.fromtimestamp(st.st_mtime)))
+            out.append(FileVersion(area, label, rel, st.st_size, datetime.fromtimestamp(st.st_mtime), former))
     return out
+
+
+MAX_RENAME_CHAIN = 50
+
+
+def file_versions(layout: JobLayout, rel: str) -> list[FileVersion]:
+    """Tutte le copie disponibili di un file (``rel`` relativo a current/ o a una versione),
+    comprese quelle dei nomi precedenti se il file è stato rinominato o spostato sul PC."""
+    return file_history(layout, rel).versions
+
+
+def file_history(layout: JobLayout, rel: str) -> FileHistory:
+    renames = load_renames(layout.manifests)  # "current/<nuovo>" -> "current/<vecchio>"
+    prefix = CURRENT + "/"
+    versions = _versions_of(layout, rel, None)
+    seen = {rel}
+    cur = rel
+    for _ in range(MAX_RENAME_CHAIN):  # segue la catena di rinomine all'indietro (con protezione dai cicli)
+        prev = renames.get(prefix + cur)
+        if prev is None or not prev.startswith(prefix):
+            break
+        cur = prev[len(prefix) :]
+        if cur in seen:
+            break
+        seen.add(cur)
+        versions += _versions_of(layout, cur, _display_name(cur))
+    renamed_to = [_display_name(new[len(prefix) :]) for new, old in renames.items() if old == prefix + rel]
+    return FileHistory(versions, renamed_to)
+
+
+def _display_name(rel: str) -> str:
+    name = rel.rsplit("/", 1)[-1]
+    return name[: -len(crypto.SUFFIX)] if name.endswith(crypto.SUFFIX) else name
 
 
 def source_roots(layout: JobLayout, job: Job, area: str) -> list[Entry]:

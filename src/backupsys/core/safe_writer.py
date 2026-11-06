@@ -68,6 +68,25 @@ class SafeWriter:
         self.manifest.stored(self._rel(dest), sha, size, item.src.mtime_ns)
         return StoredFile(sha, size, archived)
 
+    def link(self, item: PlannedItem, existing: Path, sha256: str) -> StoredFile:
+        """Il file è un rinominato/spostato di ``existing`` (già sul backup, contenuto identico verificato):
+        invece di ricopiarlo crea un hard link (nessun dato scritto, nessuno spazio in più).
+
+        Sicuro con il versioning: i file sul backup non vengono mai modificati sul posto (ogni nuova
+        versione è un file nuovo + rename), quindi i due nomi non possono "contaminarsi".
+        Solleva OSError se il file system non supporta gli hard link (exFAT/FAT32): si ripiega sulla copia.
+        """
+        if item.action is not Action.COPY:
+            raise ValueError("Il collegamento vale solo per file assenti sul backup")
+        dest = Path(item.dest_path)
+        self._check_inside_current(dest)
+        self._check_inside_current(existing)
+        self._ensure_parent(dest)
+        os.link(long_path(existing), long_path(dest))  # fallisce se dest esiste: mai sovrascrivere
+        self.manifest.stored(self._rel(dest), sha256, item.src.size, item.src.mtime_ns)
+        self.manifest.renamed(self._rel(existing), self._rel(dest))
+        return StoredFile(sha256, item.src.size, None)
+
     # ------------------------------------------------------------------ interni
     def _rel(self, p: Path) -> str:
         return p.relative_to(self.layout.root).as_posix()
