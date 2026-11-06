@@ -51,6 +51,10 @@ TRIGGER_LABELS = {
 }
 
 
+class InstallationDamagedError(RuntimeError):
+    pass
+
+
 class LoginRequired(Exception):
     pass
 
@@ -81,6 +85,12 @@ def create_app(
     sessions: SessionManager | None = None,
     port: int = 8765,
 ) -> FastAPI:
+    missing = [d for d in (HERE / "templates", HERE / "static") if not d.is_dir()]
+    if missing:
+        raise InstallationDamagedError(
+            "Installazione di backup-sys danneggiata: mancano i file dell'interfaccia "
+            f"({', '.join(str(m) for m in missing)}). Estrai di nuovo lo zip del programma in una cartella pulita."
+        )
     app = FastAPI(title="backup-sys", docs_url=None, redoc_url=None, openapi_url=None)
     auth = auth or AuthStore()
     sessions = sessions or SessionManager(service.config.ui.session_minutes)

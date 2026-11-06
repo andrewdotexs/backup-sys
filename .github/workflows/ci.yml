@@ -34,6 +34,29 @@ jobs:
       - run: uv run pyinstaller scripts/backup-sys.spec --noconfirm
       - name: Smoke test dell'eseguibile
         run: dist\backup-sys\backup-sys-cli.exe version
+      - name: Prova end-to-end (avvio, interfaccia, disinstallazione)
+        shell: pwsh
+        run: |
+          $app = Join-Path $env:RUNNER_TEMP "bsys-app"
+          Copy-Item -Recurse dist\backup-sys $app
+          $env:BACKUPSYS_HOME = Join-Path $env:RUNNER_TEMP "bsys-home"
+          $env:BACKUPSYS_KEYRING = "memory"
+          $p = Start-Process -FilePath "$app\backup-sys-cli.exe" -ArgumentList "daemon","--no-tray","--port","8790" -PassThru
+          $ok = $false
+          for ($i = 0; $i -lt 30 -and -not $ok; $i++) {
+            Start-Sleep 1
+            try { $ok = (Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8790/setup).StatusCode -eq 200 } catch {}
+          }
+          if (-not $ok) { throw "interfaccia non raggiungibile" }
+          Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8790/static/app.css | Out-Null
+          Set-Content "$env:BACKUPSYS_HOME\config\config.toml" "[ui]`nport = 8790"
+          & "$app\backup-sys-uninstall.exe" uninstall --yes
+          if ($LASTEXITCODE -ne 0) { throw "disinstallazione fallita" }
+          for ($i = 0; $i -lt 60 -and (Test-Path $app); $i++) { Start-Sleep 1 }
+          if (Test-Path $app) { Get-ChildItem -Recurse $app | Select-Object -First 30; throw "cartella del programma non rimossa" }
+          if (Test-Path "$env:BACKUPSYS_HOME\data") { throw "dati locali non rimossi" }
+          if (-not $p.HasExited) { throw "servizio ancora attivo" }
+          Write-Host "OK: servizio chiuso, dati e programma rimossi"
       - uses: actions/upload-artifact@v4
         with:
           name: backup-sys-windows

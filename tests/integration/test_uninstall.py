@@ -96,10 +96,21 @@ def test_program_items_only_known_files(tmp_path: Path) -> None:
     assert sorted(p.name for p in items) == sorted(
         ["_internal", "backup-sys.exe", "backup-sys-cli.exe", "Backup-Sys-Uninstall.EXE"]
     )
-    cmd = uninstall.removal_command(folder, items)
-    assert "tesi.docx" not in cmd and "foto.jpg" not in cmd
-    assert f'rmdir /s /q "{folder / "_internal"}"' in cmd
-    assert cmd.endswith(f'rmdir "{folder}"')  # senza /s: la cartella sparisce solo se è vuota
+    script = uninstall.removal_script(folder, items, [4242, 77], tmp_path / "x.cmd")
+    assert "tesi.docx" not in script and "foto.jpg" not in script
+    lines = script.splitlines()
+    # prima aspetta che i processi siano chiusi...
+    first_delete = next(i for i, ln in enumerate(lines) if ln.startswith(("del ", "if exist")))
+    waits = [i for i, ln in enumerate(lines) if "tasklist" in ln]
+    assert waits and max(waits) < first_delete
+    assert any('"PID eq 4242"' in ln for ln in lines) and any('"PID eq 77"' in ln for ln in lines)
+    # ...poi gli eseguibili, poi _internal (con nuovi tentativi), infine la cartella solo se vuota
+    exe_del = max(i for i, ln in enumerate(lines) if ln.startswith("del ") and ".exe" in ln.lower())
+    internal_rm = min(i for i, ln in enumerate(lines) if "rmdir /s /q" in ln)
+    assert exe_del < internal_rm
+    assert f'rmdir "{folder}" >nul 2>&1' in lines  # senza /s
+    assert not any(f'rmdir /s /q "{folder}"' in ln for ln in lines)
+    assert lines[-1].endswith(f'del /f /q "{tmp_path / "x.cmd"}"')
 
 
 def test_cli_cancel_without_confirmation() -> None:

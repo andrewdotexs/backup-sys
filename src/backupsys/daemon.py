@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 import threading
 import webbrowser
 from logging.handlers import RotatingFileHandler
@@ -21,6 +22,14 @@ def setup_logging(verbose: bool = False) -> None:
     sh = logging.StreamHandler()
     sh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s", "%H:%M:%S"))
     root.addHandler(sh)
+
+
+def _error_box(message: str) -> None:
+    """Finestra di errore su Windows (l'eseguibile senza console non avrebbe dove scrivere)."""
+    if sys.platform == "win32":  # pragma: no cover - solo Windows
+        import ctypes
+
+        ctypes.windll.user32.MessageBoxW(None, message, "backup-sys", 0x10)
 
 
 def already_running(port: int) -> bool:
@@ -47,7 +56,12 @@ def run(port: int | None = None, tray: bool = True, open_browser: bool = False) 
         return
 
     scheduler = Scheduler(service)
-    app = create_app(service, scheduler, port=port)
+    try:
+        app = create_app(service, scheduler, port=port)
+    except RuntimeError as e:  # installazione danneggiata: messaggio comprensibile invece del traceback
+        log.error("%s", e)
+        _error_box(str(e))
+        return
     server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", access_log=False))
     server_thread = threading.Thread(target=server.run, name="web", daemon=True)
 

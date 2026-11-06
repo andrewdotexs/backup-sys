@@ -117,6 +117,9 @@ def build_plan(include_program: bool = True) -> UninstallPlan:
     return plan
 
 
+_stopped_pids: list[int] = []
+
+
 def stop_running_daemon(port: int, timeout: float = 15) -> bool:
     """Chiude il servizio in ascolto su ``port`` (se è davvero backup-sys). True se nessuno è più attivo."""
     info = localhttp.healthz(port)
@@ -125,6 +128,7 @@ def stop_running_daemon(port: int, timeout: float = 15) -> bool:
     pid = info.get("pid")
     if not info.get("ok") or not isinstance(pid, int) or pid == os.getpid():
         return False
+    _stopped_pids.append(pid)
     try:
         os.kill(pid, signal.SIGTERM)  # su Windows: TerminateProcess (le copie a metà restano .bsys-partial)
     except OSError:
@@ -171,27 +175,49 @@ def execute(plan: UninstallPlan) -> list[str]:
             errors.append(f"{d}: {e}")
     if plan.program_dir is not None and plan.program_items:
         try:
-            schedule_program_removal(plan.program_dir, plan.program_items)
+            schedule_program_removal(plan.program_dir, plan.program_items, [os.getpid(), *_stopped_pids])
         except OSError as e:
             errors.append(f"Programma: {e}")
     return errors
 
 
-def removal_command(folder: Path, items: list[Path]) -> str:
-    """Comando cmd.exe che, dopo qualche secondo (il disinstallatore deve chiudersi), rimuove i file del
-    programma e poi la cartella solo se è rimasta vuota (``rmdir`` senza /s)."""
-    steps = ["ping 127.0.0.1 -n 4 >nul"]
-    for p in items:
-        if p.name.lower() in PROGRAM_DIRS:
-            steps.append(f'rmdir /s /q "{p}"')
-        else:
-            steps.append(f'del /f /q "{p}"')
-    steps.append(f'rmdir "{folder}"')
-    return " & ".join(steps)
+def removal_script(folder: Path, items: list[Path], wait_pids: list[int], script_path: Path) -> str:
+    """Script batch che rimuove i file del programma DOPO la chiusura dei processi indicati.
+
+    - aspetta che i PID (disinstallatore, servizio) siano terminati (max ~10 minuti): un file in uso non
+      si può cancellare e una rimozione a metà lascerebbe un programma danneggiato;
+    - rimuove prima gli eseguibili (così non resta nulla di avviabile), poi ``_internal`` con alcuni
+      tentativi (l'antivirus può tenere aperto un file per qualche secondo);
+    - la cartella del programma viene rimossa solo se è rimasta vuota (``rmdir`` senza /s);
+    - infine lo script cancella sé stesso.
+    """
+    lines = ["@echo off", "chcp 65001 >nul", "setlocal", "set /a n=0"]  # UTF-8: percorsi con accenti
+    for pid in wait_pids:
+        lines += [
+            f":wait{pid}",
+            f'tasklist /FI "PID eq {pid}" /NH 2>nul | find " {pid} " >nul',
+            f"if not errorlevel 1 if %n% lss 600 (set /a n+=1 & ping -n 2 127.0.0.1 >nul & goto wait{pid})",
+        ]
+    files = [p for p in items if p.name.lower() not in PROGRAM_DIRS]
+    dirs = [p for p in items if p.name.lower() in PROGRAM_DIRS]
+    for f in files:
+        lines.append(f'del /f /q "{f}" >nul 2>&1')
+    for d in dirs:
+        lines += [
+            "set /a t=0",
+            f":rm_{d.name.strip('_')}",
+            f'if exist "{d}" rmdir /s /q "{d}" >nul 2>&1',
+            f'if exist "{d}" if %t% lss 10 (set /a t+=1 & ping -n 3 127.0.0.1 >nul & goto rm_{d.name.strip("_")})',
+        ]
+    lines.append(f'rmdir "{folder}" >nul 2>&1')
+    lines.append(f'(goto) 2>nul & del /f /q "{script_path}"')
+    return "\r\n".join(lines) + "\r\n"
 
 
-def schedule_program_removal(folder: Path, items: list[Path]) -> None:  # pragma: no cover - solo Windows
-    """Un eseguibile in uso non si può cancellare: la rimozione la fa un cmd.exe staccato dopo la chiusura."""
+def schedule_program_removal(
+    folder: Path, items: list[Path], wait_pids: list[int]
+) -> None:  # pragma: no cover - solo Windows
+    """Un eseguibile in uso non si può cancellare: la rimozione la fa uno script staccato, dopo la chiusura."""
     if sys.platform != "win32":
         return
     for p in items:  # ultimo controllo: solo elementi noti, dentro la cartella del programma
@@ -199,13 +225,12 @@ def schedule_program_removal(folder: Path, items: list[Path]) -> None:  # pragma
             n.lower() for n in (*PROGRAM_FILES, *PROGRAM_DIRS)
         }:
             raise UninstallSafetyError(f"Elemento inatteso: {p}")
-    flags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
-    subprocess.Popen(
-        f'cmd.exe /c "{removal_command(folder, items)}"',
-        creationflags=flags,
-        close_fds=True,
-        cwd=os.environ.get("TEMP", "C:\\"),
-    )
+    tmp = Path(os.environ.get("TEMP") or os.environ.get("TMP") or str(Path.home()))
+    script = tmp / f"backup-sys-uninstall-{os.getpid()}.cmd"
+    script.write_text(removal_script(folder, items, wait_pids, script), encoding="utf-8", newline="")
+    # console nascosta (non DETACHED_PROCESS: chcp richiede una console); sopravvive alla chiusura del padre
+    flags = subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP
+    subprocess.Popen(["cmd.exe", "/c", str(script)], creationflags=flags, close_fds=True, cwd=str(tmp))
 
 
 def describe(plan: UninstallPlan) -> list[str]:

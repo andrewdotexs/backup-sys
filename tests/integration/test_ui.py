@@ -234,3 +234,11 @@ def test_new_job_form_shows_known_folders(client: TestClient) -> None:
     known = known_folders()
     if known:  # su Windows: i Documenti reali (SHGetKnownFolderPath)
         assert textarea == known[0][1] and "data-add-source" in r.text
+
+
+def test_damaged_installation_clear_error(svc: BackupService, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from backupsys.ui import app as app_mod
+
+    monkeypatch.setattr(app_mod, "HERE", tmp_path / "vuota")
+    with pytest.raises(app_mod.InstallationDamagedError, match="Estrai di nuovo lo zip"):
+        app_mod.create_app(svc)
