@@ -19,7 +19,7 @@ from backupsys.catalog import db
 from backupsys.catalog.db import Catalog
 from backupsys.config.models import Destination, Job
 from backupsys.core import retention
-from backupsys.core.fsutil import disk_usage, human_bytes, long_path
+from backupsys.core.fsutil import disk_usage, display_path, human_bytes, long_path
 from backupsys.core.layout import DestLayout, run_timestamp
 from backupsys.core.locks import DestinationLock, LockBusyError
 from backupsys.core.manifest import ManifestWriter
@@ -360,13 +360,13 @@ class BackupEngine:
                             dr.versioned += 1
                         dr.bytes += item.src.size
                 except SourceChangedError:
-                    dr.errors.append((item.src.abs_path, "Modificato durante la copia: verrà ripreso"))
+                    dr.errors.append((display_path(item.src.abs_path), "Modificato durante la copia: verrà ripreso"))
                 except OSError as e:
                     if e.errno == errno.ENOSPC:
-                        dr.errors.append((item.src.abs_path, "Disco pieno"))
+                        dr.errors.append((display_path(item.src.abs_path), "Disco pieno"))
                         dr.status, dr.message = db.FAILED, "Disco di backup pieno durante la copia"
                         break
-                    dr.errors.append((item.src.abs_path, e.strerror or str(e)))
+                    dr.errors.append((display_path(item.src.abs_path), e.strerror or str(e)))
                     if not os.path.isdir(dest.path):  # disco scollegato a metà
                         dr.status, dr.message = db.FAILED, "Destinazione scollegata durante la copia"
                         break

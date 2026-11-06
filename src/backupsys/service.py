@@ -171,6 +171,37 @@ class BackupService:
 
         self.mutate(fn, "config_job_saved", job=job.name, job_id=job.id)
 
+    def exclude_path(self, job_id: str, path: str) -> str:
+        """Aggiunge un percorso esatto (file o cartella) alle esclusioni del job. Restituisce il percorso salvato.
+
+        Non cancella nulla dal backup: le copie già salvate restano; vale dai backup successivi.
+        """
+        from backupsys.core.fsutil import display_path, is_relative_to, real_folder
+        from backupsys.core.scanner import is_absolute_exclude, norm_abs
+
+        job = self.config.job(job_id)
+        clean = os.path.normpath(display_path(path.strip()))
+        if not is_absolute_exclude(clean):
+            raise ValueError("Percorso non valido")
+        target = Path(norm_abs(clean))
+        inside = False
+        for src in job.sources:
+            for root in {src, real_folder(src)}:
+                r = Path(norm_abs(root))
+                if target == r:
+                    raise ValueError("È una cartella sorgente del backup: per non salvarla, toglila dalle cartelle")
+                inside = inside or is_relative_to(target, r)
+        if not inside:
+            raise ValueError("Il percorso non appartiene alle cartelle di questo backup")
+        if any(norm_abs(e) == str(target) for e in job.excludes if is_absolute_exclude(e)):
+            return clean
+
+        def fn(c: AppConfig) -> None:
+            c.job(job_id).excludes.append(clean)
+
+        self.mutate(fn, "job_exclude_added", job=job.name, path=clean)
+        return clean
+
     def remove_job(self, job_id: str) -> None:
         """Rimuove il job dalla configurazione. I dati sui dischi di backup NON vengono toccati."""
         name = self.config.job(job_id).name

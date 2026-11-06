@@ -50,7 +50,7 @@
   <details>
     <summary>Opzioni avanzate</summary>
     <div class="stack">
-      <label>File e cartelle da escludere <small>uno schema per riga (<code>*.tmp</code>, <code>**/node_modules/**</code>)</small>
+      <label>File e cartelle da escludere <small>uno per riga: schemi (<code>*.tmp</code>, <code>**/node_modules/**</code>) o percorsi esatti (<code>C:\Users\flavi\posta.pst</code>)</small>
         <textarea name="excludes" rows="6">{{ job.excludes | join('\n') }}</textarea></label>
       <label class="check"><input type="checkbox" name="deep_compare" {{ 'checked' if job.deep_compare }}> Confronto profondo con hash SHA-256 (più lento, rileva anche modifiche che non cambiano data e dimensione)</label>
       <div class="row wrap">

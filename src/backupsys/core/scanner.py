@@ -66,9 +66,31 @@ def _compile(pattern: str) -> re.Pattern[str]:
     return re.compile("^" + "".join(out) + "$", flags)
 
 
+_ABS_RE = re.compile(r"^(?:[A-Za-z]:[\\/]|\\\\)")
+
+
+def is_absolute_exclude(pattern: str) -> bool:
+    """Un'esclusione è un percorso esatto se è assoluto (``C:\\...``, ``\\\\server\\...``, ``/...`` su POSIX)."""
+    p = pattern.strip()
+    return bool(_ABS_RE.match(p)) or (not IS_WINDOWS and p.startswith("/"))
+
+
+def norm_abs(path: str) -> str:
+    """Forma canonica di un percorso assoluto per il confronto (senza ``\\\\?\\``, maiuscole ignorate su Windows)."""
+    return os.path.normcase(os.path.normpath(display_path(path)))
+
+
 class Excluder:
+    """Esclusioni del job: schemi glob relativi alla sorgente (``*.tmp``, ``**/cache/**``) oppure percorsi
+    assoluti esatti di file o cartelle (``C:\\Users\\flavi\\posta.pst``), come quelli aggiunti dal pulsante
+    «Escludi» nello storico."""
+
     def __init__(self, patterns: list[str]) -> None:
-        self.patterns = [_compile(p) for p in patterns if p.strip()]
+        self.paths = {norm_abs(p.strip()) for p in patterns if p.strip() and is_absolute_exclude(p)}
+        self.patterns = [_compile(p) for p in patterns if p.strip() and not is_absolute_exclude(p)]
+
+    def path_excluded(self, abs_path: str) -> bool:
+        return bool(self.paths) and norm_abs(abs_path) in self.paths
 
     def file_excluded(self, rel: str) -> bool:
         return any(p.match(rel) for p in self.patterns)
@@ -109,6 +131,9 @@ def scan_source(source: str, excluder: Excluder, follow_symlinks: bool, result: 
                 rel = f"{dir_rel}/{entry.name}" if dir_rel else entry.name
                 try:
                     if not follow_symlinks and _is_link(entry):
+                        continue
+                    if excluder.path_excluded(entry.path):
+                        result.excluded += 1
                         continue
                     if entry.is_dir(follow_symlinks=follow_symlinks):
                         if entry.name == ROOT_DIR and os.path.exists(os.path.join(entry.path, MARKER_NAME)):

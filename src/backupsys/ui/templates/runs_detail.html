@@ -29,10 +29,16 @@
 {% if errors %}
 <section class="card">
   <h2>Errori ({{ errors | length }})</h2>
-  <p class="muted">I file non copiati verranno ritentati automaticamente alla prossima esecuzione.</p>
+  <p class="muted">I file non copiati verranno ritentati automaticamente alla prossima esecuzione.
+     Se un file non ti interessa (es. un file sempre bloccato da un programma), puoi escluderlo dai prossimi backup.</p>
   <table>
-    <thead><tr><th>File</th><th>Problema</th></tr></thead>
-    <tbody>{% for e in errors %}<tr><td><code>{{ e.path }}</code></td><td>{{ e.error }}</td></tr>{% endfor %}</tbody>
+    <thead><tr><th>File</th><th>Problema</th><th></th></tr></thead>
+    <tbody>{% for e in errors %}<tr><td><code>{{ e.path }}</code></td><td>{{ e.error }}</td>
+      <td class="right">{% if e.excluded %}<span class="badge">escluso</span>
+      {% elif e.excludable %}<form method="post" action="/runs/{{ run.id }}/exclude" class="inline">
+        <input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="path" value="{{ e.path }}">
+        <button class="small" data-confirm="Escludere «{{ e.path }}» dai prossimi backup? Le copie già salvate restano.">Escludi dai prossimi backup</button>
+      </form>{% endif %}</td></tr>{% endfor %}</tbody>
   </table>
 </section>
 {% endif %}

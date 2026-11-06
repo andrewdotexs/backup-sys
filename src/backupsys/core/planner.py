@@ -12,7 +12,7 @@ import hashlib
 import os
 from dataclasses import dataclass, field
 
-from backupsys.core.fsutil import long_path, mtimes_equal
+from backupsys.core.fsutil import display_path, long_path, mtimes_equal
 from backupsys.core.layout import JobLayout
 from backupsys.core.scanner import SourceFile
 from backupsys.security import crypto
@@ -112,7 +112,7 @@ def build_plan(
             if action is Action.SKIP and os.path.normpath(dest) in forced:
                 action = Action.NEW_VERSION
         except OSError as e:
-            plan.errors.append((src.abs_path, f"Confronto non riuscito: {e.strerror or e}"))
+            plan.errors.append((display_path(src.abs_path), f"Confronto non riuscito: {e.strerror or e}"))
             continue
         plan.items.append(PlannedItem(src, action, dest))
     return plan

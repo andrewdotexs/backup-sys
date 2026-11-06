@@ -77,7 +77,11 @@ Opzioni: `--keep-program` rimuove solo i dati; `--yes` salta la conferma.
    Per la rete puoi indicare utente e password: vengono salvati nel Gestore credenziali di Windows.
 3. **Backup → Nuovo backup**: scegli le cartelle da salvare (una per riga), i dischi e la frequenza:
    ogni giorno, ogni settimana, ogni N ore o cron avanzato. Opzionalmente anche "quando collego un disco".
-4. Premi **Esegui ora** per il primo backup e segui l'avanzamento nella **Panoramica**.
+4. Premi **Esegui ora** per il primo backup e segui l'avanzamento nella **Panoramica** o sull'icona nella tray,
+   che durante la copia mostra la percentuale; il tooltip e il menu dell'icona riportano backup, disco e avanzamento.
+5. Se alcuni file vengono saltati (es. sempre bloccati da un programma), in **Storico → dettaglio** puoi premere
+   **Escludi dai prossimi backup** accanto al file: viene aggiunto alle esclusioni come percorso esatto.
+   Le copie già salvate restano; per annullare modifica le esclusioni del backup.
 
 ---
 

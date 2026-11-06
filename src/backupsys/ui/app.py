@@ -21,6 +21,7 @@ from backupsys.config.models import DEFAULT_EXCLUDES, Destination, Job
 from backupsys.core import restore as restore_mod
 from backupsys.core.fsutil import human_bytes, is_link_or_junction, real_folder
 from backupsys.core.layout import CURRENT
+from backupsys.core.scanner import is_absolute_exclude, norm_abs
 from backupsys.known_folders import known_folders
 from backupsys.scheduler import autostart
 from backupsys.scheduler.loop import Scheduler
@@ -461,13 +462,43 @@ def create_app(
         run = service.catalog.run(run_id)
         if run is None:
             return back("/runs", err="Esecuzione inesistente")
+        excluded: set[str] = set()
+        job_exists = True
+        try:
+            job = service.config.job(run.job_id)
+            excluded = {norm_abs(e) for e in job.excludes if is_absolute_exclude(e)}
+        except KeyError:
+            job_exists = False
+        errors = service.catalog.run_errors(run_id)
+        for e in errors:
+            e["excludable"] = job_exists and is_absolute_exclude(e["path"])
+            e["excluded"] = e["excludable"] and norm_abs(e["path"]) in excluded
         return render(
             request,
             "runs_detail.html",
             s,
             run=run,
             dests=service.catalog.run_dests(run_id),
-            errors=service.catalog.run_errors(run_id),
+            errors=errors,
+        )
+
+    @app.post("/runs/{run_id}/exclude")
+    async def run_exclude(request: Request, run_id: int) -> Response:
+        s = session(request)
+        form = await form_checked(request, s)
+        run = service.catalog.run(run_id)
+        if run is None:
+            return back("/runs", err="Esecuzione inesistente")
+        try:
+            path = service.exclude_path(run.job_id, str(form.get("path", "")))
+        except KeyError:
+            return back(f"/runs/{run_id}", err="Il backup di questa esecuzione non esiste più")
+        except ValueError as e:
+            return back(f"/runs/{run_id}", err=str(e))
+        return back(
+            f"/runs/{run_id}",
+            ok=f"«{path}» verrà escluso dai prossimi backup. Le copie già salvate restano. "
+            "Per annullare: Backup → Modifica → Opzioni avanzate.",
         )
 
     # ------------------------------------------------------------------ ripristino

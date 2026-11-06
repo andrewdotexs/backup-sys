@@ -87,7 +87,7 @@ def run(port: int | None = None, tray: bool = True, open_browser: bool = False) 
 
     try:
         if tray and Tray.available():
-            t = Tray(url, run_all, shutdown)
+            t = Tray(url, run_all, shutdown, status=service.snapshot)
             service.notifier = t.notify
             t.run()  # bloccante fino a "Esci"
         else:
