@@ -1,7 +1,6 @@
 # backup-sys — Piano di sviluppo
 
-> Stato: **BOZZA in attesa di approvazione**
-> Le decisioni aperte sono nella sezione [9. Decisioni da prendere insieme](#9-decisioni-da-prendere-insieme).
+> Stato: **APPROVATO** (2026-11-06) — decisioni prese in [§9](#9-decisioni-prese).
 
 ---
 
@@ -13,9 +12,10 @@ e un modulo di sicurezza.
 
 La regola che guida tutto il progetto:
 
-> **Invariante "solo-aggiunta" (append-only)**: il programma **non cancella mai nulla** sui dischi di backup.
-> Ogni byte che il programma ha scritto su un disco di backup resta recuperabile finché **l'utente**,
-> manualmente, non decide di cancellarlo.
+> **Invariante "solo-aggiunta" (append-only)**: il programma **non cancella mai nulla** nella copia corrente
+> (`current/`) dei dischi di backup. Ogni file presente sul PC è sempre presente sul backup.
+> L'**unica** eccezione, scelta esplicitamente (D3), è la **rotazione delle vecchie versioni** in `versions/`
+> quando lo spazio sul disco supera i limiti configurati — con le regole rigide descritte in §4.5.
 
 Conseguenze dirette dell'invariante:
 
@@ -29,9 +29,8 @@ Conseguenze dirette dell'invariante:
 | L'utente cancella una vecchia versione sul backup        | Nulla (non è più sul PC, non si può ricreare)                            |
 
 > Nota sul "file modificato": sovrascrivere un file sul backup equivale di fatto a cancellarne il contenuto
-> precedente. Per rispettare alla lettera "non può assolutamente cancellare" propongo che la vecchia versione
-> venga spostata in un'area versioni (vedi §4.3). Questo, tra l'altro, è la miglior difesa contro i
-> ransomware: se il PC viene cifrato, le versioni buone restano sul backup. → **Decisione D3**.
+> precedente. Per questo la vecchia versione viene spostata in un'area versioni (vedi §4.3). Questo è anche
+> la miglior difesa contro i ransomware: se il PC viene cifrato, le versioni buone restano sul backup.
 
 ---
 
@@ -63,10 +62,10 @@ gestione multi-utente/multi-PC centralizzata, snapshot VSS di Windows (vedi §8 
                 │                    backup-sys daemon                      │
                 │  (processo in background, parte all'avvio del sistema)    │
                 │                                                          │
-  Browser ────► │  Web UI (FastAPI + HTMX)  ◄──►  Service layer            │
+  Browser ────► │  Web UI (FastAPI+Jinja2)  ◄──►  Service layer            │
  127.0.0.1      │      ▲ auth / CSRF                │                      │
                 │      │                            ▼                      │
-  CLI ────────► │  API locale              Scheduler (APScheduler)         │
+  CLI ────────► │  API locale              Scheduler (croniter)            │
                 │                                   │ trigger: cron,       │
                 │                                   │ intervallo, disco    │
                 │                                   ▼ collegato            │
@@ -92,15 +91,15 @@ gestione multi-utente/multi-PC centralizzata, snapshot VSS di Windows (vedi §8 
 |-------------------|------------------------------------------|----------------------------------------------------------|
 | Linguaggio        | **Python 3.12+**                         | Il tuo linguaggio principale, ottimo I/O su filesystem   |
 | Gestione progetto | `uv` + `pyproject.toml`                  | Veloce, lockfile riproducibile                           |
-| Scheduler         | `APScheduler` 3.x                        | Cron, intervalli, recupero esecuzioni perse (misfire)    |
+| Scheduler         | loop proprio + `croniter`                | Cron, intervalli, "disco collegato" e recupero esecuzioni perse con un'unica logica (deviazione da APScheduler, più semplice) |
 | Database          | SQLite (stdlib `sqlite3`, WAL)           | Zero installazioni, transazionale                        |
 | Config            | TOML (`tomllib` + `tomli-w`)             | Leggibile e modificabile anche a mano                    |
-| UI                | FastAPI + Jinja2 + HTMX (+ Pico.css)     | Nessun build JS, gira ovunque, servita dal daemon (**D2**)|
+| UI                | FastAPI + Jinja2 + CSS/JS propri         | Nessun build JS né CDN: funziona offline, servita dal daemon (**D2**)|
 | Tray icon         | `pystray`                                | Icona di stato + "Apri interfaccia"                      |
 | Password          | `argon2-cffi` (Argon2id)                 | Standard attuale per hashing password                    |
 | Credenziali       | `keyring`                                | Windows Credential Manager / Keychain / Secret Service   |
 | Cifratura         | `cryptography` (AES-256-GCM)             | Libreria di riferimento, primitive AEAD                  |
-| Notifiche         | `plyer` / notifiche native               | Avvisi fine backup / errori                              |
+| Notifiche         | notifiche della tray icon (`pystray`)    | Avvisi fine backup / errori                              |
 | CLI               | `typer`                                  | Comandi `backup-sys run/status/restore/verify`           |
 | Test              | `pytest`, `hypothesis`, `pytest-cov`     | Test property-based sull'invariante                      |
 | Qualità           | `ruff`, `mypy --strict`                  |                                                          |
@@ -117,14 +116,14 @@ backup-sys/
 │   │   ├── differ.py         # confronto sorgente ↔ destinazione reale
 │   │   ├── planner.py        # produce il piano di azioni (COPY / NEW_VERSION / SKIP)
 │   │   ├── safe_writer.py    # UNICO modulo che scrive sul backup — nessuna API di cancellazione
-│   │   ├── versioning.py     # gestione area versioni
+│   │   ├── retention.py      # rotazione versioni: UNICO modulo che può cancellare (solo versions/)
 │   │   ├── engine.py         # orchestrazione di un'esecuzione
 │   │   └── restore.py        # ripristino file/versioni
 │   ├── destinations/
 │   │   ├── base.py           # interfaccia Destination
 │   │   ├── local.py          # dischi locali/USB, identificati da marker
 │   │   └── network.py        # percorsi UNC/montati + credenziali
-│   ├── scheduler/            # APScheduler, trigger "disco collegato", lock
+│   ├── scheduler/            # loop di scheduling, trigger "disco collegato", lock
 │   ├── security/
 │   │   ├── auth.py           # password UI, sessioni, CSRF
 │   │   ├── secrets.py        # keyring
@@ -168,7 +167,7 @@ Difesa a più livelli:
 2. **Scrittura atomica**: copia su `nome.bsys-partial` → `fsync` → `os.replace`/rename verso il nome finale solo se il nome finale **non esiste**. Uno stacco del disco lascia al massimo un `.bsys-partial`, mai un file troncato.
    I `.bsys-partial` orfani non vengono cancellati: vengono riutilizzati/rinominati al giro dopo (o mostrati all'utente).
 3. **Mai sovrascrivere**: prima di scrivere una nuova versione, la vecchia viene **spostata** (rename sullo stesso volume, operazione atomica e senza perdita di dati) nell'area versioni.
-4. **Test statico (AST)**: un test fallisce se nel codice che tocca le destinazioni compaiono `os.remove`, `os.unlink`, `shutil.rmtree`, `Path.unlink`, `Path.rmdir`, `os.rmdir`, `shutil.move` con sovrascrittura, ecc.
+4. **Test statico (AST)**: un test fallisce se nel codice (fuori da `retention.py`) compaiono `os.remove`, `os.unlink`, `shutil.rmtree`, `Path.unlink`, `Path.rmdir`, `os.rmdir`, `shutil.move` con sovrascrittura, ecc.
 5. **Test property-based (Hypothesis)**: genera sequenze casuali di operazioni (crea/modifica/cancella/rinomina file sul PC, cancella file sul backup, interrompi la copia…) ed esegue backup ripetuti, verificando ad ogni passo che **ogni contenuto mai scritto sul backup sia ancora presente** (salvo quelli cancellati dall'utente simulato).
 
 ### 4.3 Layout sul disco di backup (proposta, **D3**)
@@ -190,6 +189,19 @@ I file sono **in chiaro e navigabili** (se la cifratura non è attiva): puoi rec
 ### 4.4 Ripristino e verifica
 - **Restore**: sfoglia `current/` o una data in `versions/`, ripristina file/cartelle nella posizione originale o altrove. Il restore non sovrascrive mai file sul PC senza conferma (rinomina in `nome (ripristinato).ext`).
 - **Verify**: rilegge i file sul backup e ne confronta l'hash con il manifest → rileva bit-rot, settori danneggiati, manomissioni. Schedulabile (es. mensile).
+
+### 4.5 Rotazione delle versioni (D3)
+Il modulo `core/retention.py` è **l'unico** autorizzato a cancellare, e solo cartelle `versions/<data>` intere:
+- **Quando**: se le versioni occupano più di `max_versions_percent` (default 30%) della capacità del disco,
+  oppure se lo spazio libero scende sotto `min_free_percent` (default 10%).
+- **Cosa**: le cartelle `versions/<data>` più vecchie, una alla volta, finché si rientra nei limiti.
+- **Mai**: nulla dentro `current/`; nessuna versione più giovane di `min_age_days` (default 30 giorni);
+  nessun percorso che non sia esattamente `…/backup-sys/<job>/versions/<timestamp>` (controllo sul percorso risolto).
+- Se rispettando queste regole lo spazio non basta, il programma **non cancella altro**: avvisa e ferma la copia su quel disco.
+- Ogni cancellazione viene registrata nell'audit log.
+- Il guard anti-ransomware viene valutato **prima** della rotazione: un'esecuzione sospetta non arriva mai a ruotare versioni.
+
+Il test AST anti-cancellazione permette le API di cancellazione **solo** in `retention.py`.
 
 ---
 
@@ -226,7 +238,7 @@ I file sono **in chiaro e navigabili** (se la cifratura non è attiva): puoi rec
 ## 8. Rischi e punti delicati
 | Rischio                                           | Mitigazione                                                                                  |
 |---------------------------------------------------|----------------------------------------------------------------------------------------------|
-| Disco che si riempie (il programma non cancella)  | Dashboard spazio, avvisi a soglia (80/90%), stop preventivo; la pulizia la fai tu (**D5**)   |
+| Disco che si riempie                              | Rotazione versioni (§4.5), dashboard spazio, stop preventivo se `current/` non ci sta     |
 | File aperti/bloccati su Windows (Outlook .pst…)   | v1: retry + segnalazione nel report. VSS (snapshot) eventualmente in v2                      |
 | mtime inaffidabili su FAT32/exFAT/rete            | Tolleranza 2 s + modalità hash opzionale                                                     |
 | Percorsi lunghi Windows (>260 caratteri)          | Prefisso `\\?\` nelle operazioni su Windows                                                  |
@@ -237,17 +249,17 @@ I file sono **in chiaro e navigabili** (se la cifratura non è attiva): puoi rec
 
 ---
 
-## 9. Decisioni da prendere insieme
+## 9. Decisioni prese
 
-| #  | Decisione | Opzioni | **Mia raccomandazione** |
-|----|-----------|---------|-------------------------|
-| D1 | Sistema operativo del PC da proteggere | Solo Windows / Solo Linux / macOS / tutti | **Cross-platform**, con Windows come target principale di test e packaging (dimmi tu quale usi) |
-| D2 | Tipo di interfaccia | (a) Web UI locale nel browser + icona tray; (b) app desktop nativa PySide6/Qt; (c) solo terminale (TUI) | **(a)**: nessuna installazione extra, stessa UI su ogni OS, e il daemon gira anche con l'interfaccia chiusa |
-| D3 | File modificato sul PC | (a) Versioning: la vecchia versione viene conservata in `versions/`; (b) sovrascrittura semplice | **(a)**: è l'unica opzione davvero coerente con "non cancellare mai" e protegge dai ransomware |
-| D4 | Cifratura dei backup | (a) Opzionale per destinazione; (b) sempre attiva; (c) assente | **(a)**, disattivata di default: i backup in chiaro restano apribili anche senza il programma |
-| D5 | Pulizia del disco di backup | (a) Il programma non contiene **alcun** codice di cancellazione: cancelli tu da Esplora Risorse, la UI ti mostra solo cosa occupa spazio; (b) la UI offre una "pulizia guidata" che cancella solo dopo tua conferma esplicita con password | **(a)** per la v1: garanzia massima e verificabile dai test. (b) eventualmente in futuro |
-| D6 | Destinazioni di rete | (a) Percorsi UNC/montati; (b) client SMB integrato (`smbprotocol`) | **(a)** per la v1, più semplice e robusto |
-| D7 | Lingua dell'interfaccia | Italiano / Inglese / entrambe (i18n) | **Italiano**, con struttura pronta per l'inglese |
+| #  | Decisione | Scelta |
+|----|-----------|--------|
+| D1 | Sistema operativo | **Windows 11**, uso privato (il codice resta portabile, i test girano anche su Linux) |
+| D2 | Interfaccia | **Web UI locale** (127.0.0.1) + icona nella tray |
+| D3 | File modificato | **Versioning**, con **rotazione automatica delle versioni più vecchie** in base allo spazio (§4.5) |
+| D4 | Cifratura | **Opzionale per destinazione**, disattivata di default |
+| D5 | Pulizia | Nessuna funzione di cancellazione manuale nel programma; l'unica cancellazione automatica è la rotazione di D3 |
+| D6 | Rete | **Percorsi UNC / unità di rete mappate** |
+| D7 | Lingua | **Solo italiano** |
 
 ---
 
@@ -260,7 +272,7 @@ Ogni fase si chiude con codice funzionante, test verdi e un commit/push sul bran
 | **0. Fondamenta** | `pyproject`, `uv`, ruff, mypy, pytest, CI GitHub Actions (Win/Linux/macOS), struttura pacchetti, modello di configurazione | `pytest` e CI verdi su scheletro vuoto |
 | **1. Motore core** | scanner, esclusioni, differ, planner, **SafeWriter**, versioning, scrittura atomica, hash in streaming, catalogo SQLite | `backup-sys run` da CLI fa un backup corretto su cartella locale; test property-based e test AST anti-cancellazione verdi |
 | **2. Destinazioni** | marker di volume, multi-destinazione, percorsi di rete + keyring, controllo spazio, lock | Backup di un job su 2+ destinazioni, rifiuto di disco "sbagliato" |
-| **3. Scheduler & daemon** | APScheduler, trigger cron/intervallo/"disco collegato", recupero esecuzioni perse, autostart per OS, notifiche, tray | Il backup parte da solo all'orario e al collegamento del disco |
+| **3. Scheduler & daemon** | loop di scheduling, trigger cron/intervallo/"disco collegato", recupero esecuzioni perse, autostart per OS, notifiche, tray | Il backup parte da solo all'orario e al collegamento del disco |
 | **4. Sicurezza** | auth UI, audit log a catena, guard anti-ransomware, verifica integrità, cifratura opzionale | Test su manomissione audit log, verify che rileva file corrotti, roundtrip cifratura |
 | **5. Interfaccia** | dashboard (stato job, ultimo esito, spazio dischi), CRUD job/destinazioni/schedule, storico e log, avvio manuale con avanzamento live, browser e restore | UI completa, test end-to-end con Playwright |
 | **6. Restore & verify da UI** | ripristino file/cartelle/versioni, verifica schedulabile | Ripristino di una versione di 3 giorni fa da UI |
@@ -275,6 +287,6 @@ UI e comodità vengono dopo, sopra fondamenta già testate.
 - **Unit**: scanner/esclusioni, differ (tolleranza mtime), planner, crypto, audit chain.
 - **Integration**: backup reali su directory temporanee che simulano dischi; simulazione di disco scollegato a metà copia (eccezione iniettata nel writer).
 - **Property-based (Hypothesis)**: l'invariante append-only su migliaia di sequenze casuali di eventi.
-- **Statici**: test AST che vieta le API di cancellazione nei moduli di scrittura; `mypy --strict`.
+- **Statici**: test AST che vieta le API di cancellazione ovunque tranne `retention.py`; `mypy --strict`.
 - **E2E UI**: Playwright (Chromium) sui flussi principali.
 - **Copertura obiettivo**: ≥ 90% sul pacchetto `core/`.
