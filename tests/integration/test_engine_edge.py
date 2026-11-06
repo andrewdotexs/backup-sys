@@ -148,3 +148,37 @@ def test_fsutil_helpers(tmp_path: Path) -> None:
     fsutil.rename_no_clobber(a, tmp_path / "c")
     assert (tmp_path / "c").read_text() == "a"
     assert fsutil.mtimes_equal(0, 1_999_999_999) and not fsutil.mtimes_equal(0, 2_000_000_001)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="i symlink richiedono privilegi su Windows")
+def test_source_junction_is_resolved(env: Env, tmp_path: Path) -> None:
+    """Come il collegamento di compatibilità «Documenti» → «Documents» di Windows."""
+    real = tmp_path / "pc" / "Documents"
+    real.mkdir(parents=True)
+    (real / "tesi.docx").write_text("contenuto")
+    link = tmp_path / "pc" / "Documenti-link"
+    link.symlink_to(real, target_is_directory=True)
+    env.job.sources = [str(link)]
+    r = env.run()
+    assert r.status == db.OK and r.files_scanned == 1
+
+
+def test_all_sources_unreadable_is_failure(env: Env, tmp_path: Path) -> None:
+    env.job.sources = [str(tmp_path / "non-esiste")]
+    r = env.run()
+    assert r.status == db.FAILED and "Nessuna cartella sorgente leggibile" in r.message
+    assert r.dests == []
+
+
+def test_some_sources_unreadable_is_warning(env: Env, tmp_path: Path) -> None:
+    env.write("a.txt", "x")
+    env.job.sources = [str(env.src), str(tmp_path / "non-esiste")]
+    r = env.run()
+    assert r.status == db.WARNING and "non leggibili" in r.message
+    assert (env.current() / "a.txt").exists()
+
+
+def test_display_path() -> None:
+    assert fsutil.display_path("\\\\?\\C:\\Users\\andre\\Documenti") == "C:\\Users\\andre\\Documenti"
+    assert fsutil.display_path("\\\\?\\UNC\\NAS\\share") == "\\\\NAS\\share"
+    assert fsutil.display_path("/home/x") == "/home/x"

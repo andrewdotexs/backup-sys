@@ -19,8 +19,9 @@ from backupsys import __version__
 from backupsys.catalog import db
 from backupsys.config.models import DEFAULT_EXCLUDES, Destination, Job
 from backupsys.core import restore as restore_mod
-from backupsys.core.fsutil import human_bytes
+from backupsys.core.fsutil import human_bytes, is_link_or_junction, real_folder
 from backupsys.core.layout import CURRENT
+from backupsys.known_folders import known_folders
 from backupsys.scheduler import autostart
 from backupsys.scheduler.loop import Scheduler
 from backupsys.scheduler.timing import describe
@@ -274,7 +275,9 @@ def create_app(
 
     def _job_form(request: Request, s: Session, job: Job | None) -> Response:
         cfg = service.config
-        j = job or Job(name="Nuovo backup", sources=["C:\\Users"], destinations=[d.id for d in cfg.destinations])
+        known = known_folders()
+        default_src = known[0][1] if known else str(Path.home())  # i Documenti reali (anche su OneDrive)
+        j = job or Job(name="Nuovo backup", sources=[default_src], destinations=[d.id for d in cfg.destinations])
         return render(
             request,
             "jobs_form.html",
@@ -284,6 +287,7 @@ def create_app(
             sched=schedule_to_form(j.schedule),
             dests=cfg.destinations,
             default_excludes=DEFAULT_EXCLUDES,
+            known=known,
         )
 
     @app.get("/jobs/new", response_class=HTMLResponse)
@@ -313,10 +317,29 @@ def create_app(
                 existing = None
         try:
             job = job_from_form(data, existing)
+            job, notes = _check_sources(job)
             service.save_job(job)
         except (ValidationError, ValueError) as e:
             return back(f"/jobs/{job_id}" if existing else "/jobs/new", err=_err(e))
+        if notes:
+            return back(f"/jobs/{job.id}", err=f"Backup «{job.name}» salvato, ma: " + " ".join(notes))
         return back("/jobs", ok=f"Backup «{job.name}» salvato")
+
+    def _check_sources(job: Job) -> tuple[Job, list[str]]:
+        """Sostituisce i collegamenti (es. «Documenti» di compatibilità) con la cartella reale
+        e segnala le cartelle che non esistono."""
+        notes: list[str] = []
+        sources: list[str] = []
+        for src in job.sources:
+            if is_link_or_junction(src):
+                real = real_folder(src)
+                notes.append(f"«{src}» è un collegamento di Windows: uso la cartella reale «{real}».")
+                src = real
+            elif not os.path.isdir(src):
+                notes.append(f"La cartella «{src}» non esiste o non è raggiungibile.")
+            if src not in sources:
+                sources.append(src)
+        return job.model_copy(update={"sources": sources}), notes
 
     @app.post("/jobs/{job_id}/delete")
     async def job_delete(request: Request, job_id: str) -> Response:

@@ -8,8 +8,14 @@
 
   <label>Nome <input name="name" value="{{ job.name }}" required></label>
 
-  <label>Cartelle da salvare <small>una per riga, es. <code>C:\Users\andrea\Documenti</code></small>
-    <textarea name="sources" rows="4" required>{{ job.sources | join('\n') }}</textarea></label>
+  <label>Cartelle da salvare <small>una per riga; usa i pulsanti per le cartelle di Windows (percorso reale, anche se su OneDrive)</small>
+    <textarea name="sources" id="sources" rows="4" required>{{ job.sources | join('\n') }}</textarea></label>
+  {% if known %}
+  <div class="row wrap chips">
+    <small class="muted">Aggiungi:</small>
+    {% for label, path in known %}<button type="button" class="small" data-add-source="{{ path }}" title="{{ path }}">+ {{ label }}</button>{% endfor %}
+  </div>
+  {% endif %}
 
   <fieldset>
     <legend>Dischi di destinazione</legend>

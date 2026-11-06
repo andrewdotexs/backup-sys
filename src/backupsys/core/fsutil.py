@@ -25,6 +25,29 @@ def long_path(path: str | os.PathLike[str]) -> str:
     return "\\\\?\\" + s
 
 
+def display_path(path: str | os.PathLike[str]) -> str:
+    """Percorso leggibile per l'utente: senza il prefisso tecnico ``\\\\?\\``."""
+    s = os.fspath(path)
+    if s.startswith("\\\\?\\UNC\\"):
+        return "\\\\" + s[8:]
+    if s.startswith("\\\\?\\"):
+        return s[4:]
+    return s
+
+
+def is_link_or_junction(path: str) -> bool:
+    try:
+        return os.path.islink(path) or bool(getattr(os.path, "isjunction", lambda p: False)(path))
+    except OSError:
+        return False
+
+
+def real_folder(path: str) -> str:
+    """Cartella reale: risolve link e junction (es. il collegamento di compatibilità
+    ``C:\\Users\\andrea\\Documenti`` → ``C:\\Users\\andrea\\Documents``, che Windows non permette di elencare)."""
+    return os.path.realpath(path) if is_link_or_junction(path) else path
+
+
 def source_key(source: str) -> str:
     """Trasforma un percorso sorgente in una chiave relativa stabile usata sul disco di backup.
 

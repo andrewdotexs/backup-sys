@@ -8,7 +8,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 from functools import lru_cache
 
-from backupsys.core.fsutil import IS_WINDOWS, long_path, source_key
+from backupsys.core.fsutil import IS_WINDOWS, display_path, long_path, real_folder, source_key
 from backupsys.core.layout import MARKER_NAME, ROOT_DIR
 
 
@@ -31,6 +31,7 @@ class ScanResult:
     files: list[SourceFile] = field(default_factory=list)
     errors: list[tuple[str, str]] = field(default_factory=list)  # (percorso, messaggio)
     excluded: int = 0
+    unreadable_sources: list[str] = field(default_factory=list)  # cartelle sorgente non leggibili del tutto
 
     @property
     def total_bytes(self) -> int:
@@ -85,10 +86,12 @@ def _is_link(entry: os.DirEntry[str]) -> bool:
 
 
 def scan_source(source: str, excluder: Excluder, follow_symlinks: bool, result: ScanResult) -> None:
-    key = source_key(source)
-    root = long_path(source)
+    key = source_key(source)  # la chiave resta quella del percorso configurato
+    real = real_folder(source)
+    root = long_path(real)
     if not os.path.isdir(root):
         result.errors.append((source, "Cartella sorgente non trovata o non accessibile"))
+        result.unreadable_sources.append(source)
         return
     stack: list[tuple[str, str]] = [(root, "")]
     while stack:
@@ -96,7 +99,10 @@ def scan_source(source: str, excluder: Excluder, follow_symlinks: bool, result: 
         try:
             it = os.scandir(dir_abs)
         except OSError as e:
-            result.errors.append((dir_abs, f"Impossibile leggere la cartella: {e.strerror or e}"))
+            msg = f"Impossibile leggere la cartella: {e.strerror or e}"
+            if not dir_rel:
+                result.unreadable_sources.append(source)
+            result.errors.append((display_path(dir_abs), msg))
             continue
         with it:
             for entry in it:
@@ -118,7 +124,7 @@ def scan_source(source: str, excluder: Excluder, follow_symlinks: bool, result: 
                         st = entry.stat(follow_symlinks=follow_symlinks)
                         result.files.append(SourceFile(key, rel, entry.path, st.st_size, st.st_mtime_ns))
                 except OSError as e:
-                    result.errors.append((entry.path, f"Errore di accesso: {e.strerror or e}"))
+                    result.errors.append((display_path(entry.path), f"Errore di accesso: {e.strerror or e}"))
 
 
 def scan(sources: list[str], excludes: list[str], follow_symlinks: bool = False) -> ScanResult:

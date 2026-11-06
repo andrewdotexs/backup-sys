@@ -128,6 +128,14 @@ class BackupEngine:
             result.scan_errors = scanned.errors
             result.files_scanned = len(scanned.files)
             self.catalog.record_errors(run_id, None, scanned.errors)
+            if scanned.unreadable_sources and len(scanned.unreadable_sources) >= len(job.sources):
+                # niente da salvare: non ha senso dichiarare "completato" su nessun disco
+                result.status = db.FAILED
+                result.message = (
+                    "Nessuna cartella sorgente leggibile: " + ", ".join(scanned.unreadable_sources) + ". "
+                    "Controlla che i percorsi esistano e siano accessibili (vedi errori)."
+                )
+                return result
             selected = [d for d in dests if options.only_dest_ids is None or d.id in options.only_dest_ids]
             for dest in selected:
                 if cancel.is_set():
@@ -168,6 +176,10 @@ class BackupEngine:
                 if d.message:
                     grouped.setdefault(d.message, []).append(d.name)
             result.message = "; ".join(f"{', '.join(names)}: {msg}" for msg, names in grouped.items())
+            if scanned.unreadable_sources:
+                result.message = (
+                    "Cartelle sorgente non leggibili: " + ", ".join(scanned.unreadable_sources) + ". " + result.message
+                ).strip()
             if not selected:
                 result.message = "Nessuna destinazione configurata"
         except Exception as e:  # errore imprevisto: registrato, mai propagato al daemon

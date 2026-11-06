@@ -198,3 +198,32 @@ def test_change_password_logs_out(client: TestClient) -> None:
     assert client.get("/").headers["location"] == "/login"
     r = client.post("/login", data={"password": "nuova-password"})
     assert r.headers["location"] == "/"
+
+
+def test_job_save_resolves_link_and_warns_missing(client: TestClient, svc: BackupService, tmp_path: Path) -> None:
+    import os
+
+    csrf = _login(client)
+    real = tmp_path / "Documents"
+    real.mkdir()
+    sources = [str(tmp_path / "manca")]
+    if os.name != "nt":
+        link = tmp_path / "Documenti"
+        link.symlink_to(real, target_is_directory=True)
+        sources.append(str(link))
+    r = client.post(
+        "/jobs/save",
+        data={"csrf": csrf, "name": "Doc", "sources": "\n".join(sources), "schedule_kind": "manual"},
+    )
+    assert r.status_code == 303 and "salvato" in r.headers["location"] and "err=" in r.headers["location"]
+    job = svc.config.jobs[0]
+    if os.name != "nt":
+        assert str(real) in job.sources and str(tmp_path / "Documenti") not in job.sources
+    page = client.get(r.headers["location"])
+    assert "non esiste" in page.text
+
+
+def test_new_job_form_shows_known_folders(client: TestClient) -> None:
+    _login(client)
+    r = client.get("/jobs/new")
+    assert r.status_code == 200 and "C:\\Users" not in r.text.split("<textarea")[1].split("</textarea>")[0]

@@ -11,6 +11,17 @@
     }
   }, true);
 
+  // Pulsanti "+ Documenti" ecc.: aggiungono il percorso reale alle sorgenti
+  document.querySelectorAll("[data-add-source]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      const ta = document.getElementById("sources");
+      const path = b.getAttribute("data-add-source");
+      const lines = ta.value.split(/\r?\n/).map(function (l) { return l.trim(); }).filter(Boolean);
+      if (lines.indexOf(path) < 0) { lines.push(path); }
+      ta.value = lines.join("\n");
+    });
+  });
+
   // <select data-autosubmit> invia il form al cambio
   document.querySelectorAll("select[data-autosubmit]").forEach(function (s) {
     s.addEventListener("change", function () { s.form.submit(); });
